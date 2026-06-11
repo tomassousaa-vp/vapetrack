@@ -653,6 +653,7 @@
     .badge-blue   { background: rgba(56,189,248,0.15);  color: var(--c-sky);     border: 1px solid rgba(56,189,248,0.25); }
     .badge-purple { background: rgba(167,139,250,0.15); color: var(--c-violet);  border: 1px solid rgba(167,139,250,0.25); }
     .badge-pink   { background: rgba(232,121,249,0.15); color: var(--c-fuchsia); border: 1px solid rgba(232,121,249,0.25); }
+    .badge-orange { background: rgba(251,146,60,0.15);  color: #fb923c;          border: 1px solid rgba(251,146,60,0.25); }
     .badge svg { width: 11px; height: 11px; }
 
     /* ═══════════════════════════════════════
@@ -1004,6 +1005,9 @@
       display: flex; align-items: center; justify-content: center;
     }
     .item-card-remove svg { width: 14px; height: 14px; }
+    .item-card-pay { display: grid; grid-template-columns: 1fr 1.2fr; gap: 8px; margin-top: 8px; }
+    .item-card-pay .field-input { min-height: 42px; padding: 9px 12px; }
+    .item-card-paysum { margin-top: 6px; font-size: 11px; color: var(--text-muted); min-height: 14px; }
     .item-card-num {
       position: absolute; top: -10px; left: 12px;
       background: linear-gradient(135deg, #A78BFA, #7C3AED);
@@ -2083,7 +2087,7 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
 });
 
 // App version — keep in sync with sw.js VERSION (used in account sheet for verification)
-const APP_VERSION = 'v45';
+const APP_VERSION = 'v47';
 
 let currentUser = null;
 let dataReady = false;
@@ -2102,9 +2106,11 @@ const cache = {
 // ═══════════════════════════════════════
 const VAPES_PER_BOX = 10;
 const STATUS = {
-  pending: { label: 'Pendente', color: 'yellow', icon: 'clock' },
-  cash:    { label: 'Dinheiro', color: 'green',  icon: 'cash' },
-  mbway:   { label: 'MB Way',   color: 'blue',   icon: 'mbway' },
+  pending:   { label: 'Pendente', color: 'yellow', icon: 'clock' },
+  cash:      { label: 'Dinheiro', color: 'green',  icon: 'cash' },
+  mbway:     { label: 'MB Way',   color: 'blue',   icon: 'mbway' },
+  partial:   { label: 'Parcial',  color: 'orange', icon: 'clock' },
+  paidmixed: { label: 'Pago',     color: 'green',  icon: 'cash' },
 };
 
 // Storage keys
@@ -2296,12 +2302,18 @@ function saleToDB(s) {
             : (s.flavor || s.model || s.units)
               ? [{ flavor: s.flavor || '', model: s.model || '', units: parseInt(s.units) || 0 }]
               : [];
-  // Normalize
-  items = items.map(i => ({
-    flavor: (i.flavor || '').trim(),
-    model:  (i.model  || '').trim(),
-    units:  parseInt(i.units) || 0,
-  })).filter(i => i.units > 0);
+  // Normalize (keep per-item payment fields: paidUnits + method)
+  items = items.map(i => {
+    const units = parseInt(i.units) || 0;
+    const paidUnits = Math.min(Math.max(parseInt(i.paidUnits) || 0, 0), units);
+    return {
+      flavor: (i.flavor || '').trim(),
+      model:  (i.model  || '').trim(),
+      units,
+      paidUnits,
+      method: i.method === 'mbway' ? 'mbway' : 'cash',
+    };
+  }).filter(i => i.units > 0);
 
   const totalUnits = items.reduce((sum, i) => sum + i.units, 0);
   const first = items[0] || { flavor: '', model: '' };
@@ -2313,7 +2325,7 @@ function saleToDB(s) {
     customer: s.customer || '',
     units: totalUnits,             // legacy: total across items
     total_price: parseFloat(s.totalPrice) || 0,
-    status: s.status || 'pending',
+    status: dbStatusFromItems(items),
     notes: s.notes || '',
     items: items,
     apply_promo: s.applyPromo === true,
@@ -2329,11 +2341,21 @@ function saleFromDB(row) {
       units:  parseInt(row.units) || 0,
     }];
   }
-  items = items.map(i => ({
-    flavor: i.flavor || '',
-    model:  i.model  || '',
-    units:  parseInt(i.units) || 0,
-  }));
+  // Legacy migration: old items have no paidUnits. Derive from the sale-level
+  // status column — a fully 'cash'/'mbway' sale ⇒ every unit paid with that method.
+  const legacyMethod = (row.status === 'cash' || row.status === 'mbway') ? row.status : null;
+  items = items.map(i => {
+    const units = parseInt(i.units) || 0;
+    let paidUnits, method;
+    if (i.paidUnits === undefined || i.paidUnits === null) {
+      paidUnits = legacyMethod ? units : 0;
+      method = legacyMethod || 'cash';
+    } else {
+      paidUnits = Math.min(Math.max(parseInt(i.paidUnits) || 0, 0), units);
+      method = i.method === 'mbway' ? 'mbway' : 'cash';
+    }
+    return { flavor: i.flavor || '', model: i.model || '', units, paidUnits, method };
+  });
   const totalUnits = items.reduce((sum, i) => sum + i.units, 0);
   return {
     id: row.id,
@@ -2344,11 +2366,60 @@ function saleFromDB(row) {
     customer: row.customer || '',
     units: totalUnits,
     totalPrice: parseFloat(row.total_price) || 0,
-    status: row.status || 'pending',
+    status: deriveSaleStatus(items),  // derived from per-item paidUnits/method
     notes: row.notes || '',
     createdAt: row.created_at || '',
     applyPromo: row.apply_promo === true,
   };
+}
+
+// ── Partial-payment helpers ──────────────────────────────────────────────
+// A sale item is { flavor, model, units, paidUnits, method }. paidUnits∈[0,units];
+// `method` ('cash'|'mbway') applies to that item's PAID portion only. The rest is pending.
+function deriveSaleStatus(items) {
+  const list = Array.isArray(items) ? items : [];
+  let total = 0, paid = 0;
+  const methods = new Set();
+  list.forEach(i => {
+    const u = parseInt(i.units) || 0;
+    const p = Math.min(Math.max(parseInt(i.paidUnits) || 0, 0), u);
+    total += u; paid += p;
+    if (p > 0) methods.add(i.method === 'mbway' ? 'mbway' : 'cash');
+  });
+  if (total <= 0 || paid <= 0) return 'pending';
+  if (paid < total) return 'partial';
+  return methods.size === 1 ? [...methods][0] : 'paidmixed'; // fully paid
+}
+// The DB `status` column only stores legacy enum values ('pending'|'cash'|'mbway')
+// to avoid any CHECK-constraint risk; the rich state lives in items[].
+function dbStatusFromItems(items) {
+  const st = deriveSaleStatus(items);
+  return (st === 'cash' || st === 'mbway') ? st : 'pending';
+}
+function saleUnitPrice(s) {
+  const u = s.units || 0;
+  return u > 0 ? (s.totalPrice || 0) / u : 0;
+}
+function salePaidUnits(s) {
+  return (s.items || []).reduce((sum, i) => {
+    const u = parseInt(i.units) || 0;
+    return sum + Math.min(Math.max(parseInt(i.paidUnits) || 0, 0), u);
+  }, 0);
+}
+function salePendingUnits(s) {
+  return Math.max(0, (s.units || 0) - salePaidUnits(s));
+}
+function salePaidAmount(s)    { return salePaidUnits(s)    * saleUnitPrice(s); }
+function salePendingAmount(s) { return salePendingUnits(s) * saleUnitPrice(s); }
+function salePaidByMethod(s) {
+  const up = saleUnitPrice(s);
+  const out = { cash: 0, mbway: 0 };
+  (s.items || []).forEach(i => {
+    const u = parseInt(i.units) || 0;
+    const p = Math.min(Math.max(parseInt(i.paidUnits) || 0, 0), u);
+    if (p > 0) out[i.method === 'mbway' ? 'mbway' : 'cash'] += p * up;
+  });
+  return out;
 }
 
 // ═══════════════════════════════════════
@@ -2880,13 +2951,6 @@ async function deleteSaleRemote(id) {
   cache.sales = cache.sales.filter(s => s.id !== id);
 }
 
-async function updateSaleStatus(id, status) {
-  const { data, error } = await sb.from('sales').update({ status }).eq('id', id).select().single();
-  if (error) throw error;
-  const idx = cache.sales.findIndex(s => s.id === id);
-  if (idx !== -1) cache.sales[idx] = saleFromDB(data);
-}
-
 async function wipeUserData(includeCatalog) {
   // Delete all hauls + sales for this user (RLS scopes automatically)
   const [h, s] = await Promise.all([
@@ -2913,7 +2977,7 @@ const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2);
 // ═══════════════════════════════════════
 // FORMAT
 // ═══════════════════════════════════════
-const fmt = v => '€' + (Number(v) || 0).toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+const fmt = v => '€' + Math.round(Number(v) || 0).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 
 function fmtDate(s) {
   if (!s) return '—';
@@ -3073,13 +3137,17 @@ function computeHaulStats() {
 
   // Drain sales FIFO (strict chronological: skip hauls created AFTER the sale)
   salesAsc.forEach(sale => {
-    const isPaid = (sale.status === 'cash' || sale.status === 'mbway');
     const totalSaleUnits = sale.units || 0;
     const pricePerUnit = totalSaleUnits > 0 ? (sale.totalPrice / totalSaleUnits) : 0;
 
     (sale.items || []).forEach(saleItem => {
       const key = (saleItem.flavor || '') + '|' + (saleItem.model || '');
-      let unitsToAssign = parseInt(saleItem.units) || 0;
+      const itemUnits = parseInt(saleItem.units) || 0;
+      const itemMethod = saleItem.method === 'mbway' ? 'mbway' : 'cash';
+      // Per-item partial payment: first `paidRemaining` units of this item are paid
+      // (paid-first allocation), the rest are pending.
+      let paidRemaining = Math.min(Math.max(parseInt(saleItem.paidUnits) || 0, 0), itemUnits);
+      let unitsToAssign = itemUnits;
       for (const haul of haulsAsc) {
         if (unitsToAssign <= 0) break;
         // STRICT chronological: a sale cannot come from a haul created after it
@@ -3091,22 +3159,24 @@ function computeHaulStats() {
         stat.remaining[key] = avail - taken;
         unitsToAssign -= taken;
 
+        // Split this chunk into paid vs pending (paid-first)
+        const paidTaken = Math.min(taken, paidRemaining);
+        const pendingTaken = taken - paidTaken;
+        paidRemaining -= paidTaken;
+
         stat.soldUnits += taken;
-        const contribution = taken * pricePerUnit;
-        stat.revenueAll += contribution;
-        if (isPaid) { stat.revenuePaid += contribution; stat.paidUnits += taken; }
+        stat.revenueAll += taken * pricePerUnit;
         stat.cost += taken * (haul.pricePerVape || 0);
 
-        // Per-status tracking
-        const status = sale.status || 'pending';
-        if (status === 'cash') {
-          stat.revenueCash += contribution;
-          stat.cashSalesIds.add(sale.id);
-        } else if (status === 'mbway') {
-          stat.revenueMbway += contribution;
-          stat.mbwaySalesIds.add(sale.id);
-        } else {
-          stat.revenuePending += contribution;
+        if (paidTaken > 0) {
+          const paidContribution = paidTaken * pricePerUnit;
+          stat.revenuePaid += paidContribution;
+          stat.paidUnits += paidTaken;
+          if (itemMethod === 'mbway') { stat.revenueMbway += paidContribution; stat.mbwaySalesIds.add(sale.id); }
+          else                       { stat.revenueCash  += paidContribution; stat.cashSalesIds.add(sale.id); }
+        }
+        if (pendingTaken > 0) {
+          stat.revenuePending += pendingTaken * pricePerUnit;
           stat.pendingSalesIds.add(sale.id);
         }
         stat.anySalesIds.add(sale.id);
@@ -3691,11 +3761,45 @@ function addSaleItemRow(item) {
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
     </div>
+    <div class="item-card-pay">
+      <input class="field-input sale-item-paid" type="number" min="0" step="1" inputmode="numeric" placeholder="Já pagas" value="${item.paidUnits ? item.paidUnits : ''}">
+      <select class="field-input sale-item-method">
+        <option value="cash"${(item.method || 'cash') === 'cash' ? ' selected' : ''}>💵 Dinheiro</option>
+        <option value="mbway"${item.method === 'mbway' ? ' selected' : ''}>📱 MB Way</option>
+      </select>
+    </div>
+    <div class="item-card-paysum"></div>
   `;
   wrap.appendChild(card);
 
   card.querySelectorAll('input').forEach(inp => inp.addEventListener('input', debouncedUpdateSaleTotals));
+  const refreshPaySum = () => updateSaleItemPaySummary(card);
+  card.querySelector('.sale-item-units').addEventListener('input', refreshPaySum);
+  card.querySelector('.sale-item-paid').addEventListener('input', refreshPaySum);
+  card.querySelector('.sale-item-method').addEventListener('change', () => { debouncedUpdateSaleTotals(); refreshPaySum(); });
   card.querySelector('.item-card-remove').addEventListener('click', () => removeSaleItemRow(card));
+  refreshPaySum();
+}
+
+// Live "X paga(s) · Y pendente(s)" summary under an item row; also clamps paid≤units.
+function updateSaleItemPaySummary(card) {
+  const units = parseInt(card.querySelector('.sale-item-units').value) || 0;
+  const paidInp = card.querySelector('.sale-item-paid');
+  let paid = parseInt(paidInp.value) || 0;
+  if (paid < 0) { paid = 0; paidInp.value = ''; }
+  if (units > 0 && paid > units) { paid = units; paidInp.value = String(units); }
+  const method = card.querySelector('.sale-item-method').value === 'mbway' ? 'mbway' : 'cash';
+  const sumEl = card.querySelector('.item-card-paysum');
+  if (!sumEl) return;
+  const pending = Math.max(0, units - paid);
+  if (paid <= 0) {
+    sumEl.textContent = units > 0 ? `${units} pendente(s)` : '';
+    sumEl.style.color = 'var(--text-muted)';
+  } else {
+    const mlabel = method === 'mbway' ? 'MB Way' : 'Dinheiro';
+    sumEl.textContent = `${paid} paga(s) (${mlabel})` + (pending > 0 ? ` · ${pending} pendente(s)` : '');
+    sumEl.style.color = pending > 0 ? '#fb923c' : 'var(--c-emerald)';
+  }
 }
 
 function removeSaleItemRow(card) {
@@ -3717,7 +3821,10 @@ function readSaleItemRows() {
     const model  = row.querySelector('.sale-item-model').value.trim();
     const units  = parseInt(row.querySelector('.sale-item-units').value);
     if ((flavor || model) && units > 0) {
-      items.push({ flavor, model, units });
+      let paidUnits = parseInt(row.querySelector('.sale-item-paid')?.value) || 0;
+      paidUnits = Math.min(Math.max(paidUnits, 0), units);
+      const method = row.querySelector('.sale-item-method')?.value === 'mbway' ? 'mbway' : 'cash';
+      items.push({ flavor, model, units, paidUnits, method });
     }
   });
   return items;
@@ -3933,7 +4040,7 @@ async function handleSaleSubmit(e) {
       customer,
       totalPrice: price,
       notes,
-      status: existing ? existing.status : 'pending',
+      status: deriveSaleStatus(items),  // derived from per-item paid units/method
       applyPromo,
     };
 
@@ -3960,19 +4067,32 @@ async function handleSaleSubmit(e) {
 // ═══════════════════════════════════════
 // PAYMENT STATUS
 // ═══════════════════════════════════════
+// Card shortcut: pay ALL units of the sale with one method.
 async function markSalePaid(id, method) {
   try {
-    await updateSaleStatus(id, method);
+    const sale = getSales().find(s => s.id === id);
+    if (!sale) return;
+    const m = method === 'mbway' ? 'mbway' : 'cash';
+    const items = (sale.items || []).map(i => ({
+      flavor: i.flavor, model: i.model, units: i.units, paidUnits: i.units, method: m,
+    }));
+    await addOrUpdateSale({ ...sale, items });
     refreshAll();
-    showToast(`Pago em ${STATUS[method].label} ✓`, 'success');
+    showToast(`Pago em ${STATUS[m].label} ✓`, 'success');
   } catch (err) {
     showToast('Erro: ' + (err.message || err), 'error');
   }
 }
 
+// Card shortcut: reset ALL units back to pending.
 async function markSalePending(id) {
   try {
-    await updateSaleStatus(id, 'pending');
+    const sale = getSales().find(s => s.id === id);
+    if (!sale) return;
+    const items = (sale.items || []).map(i => ({
+      flavor: i.flavor, model: i.model, units: i.units, paidUnits: 0, method: i.method || 'cash',
+    }));
+    await addOrUpdateSale({ ...sale, items });
     refreshAll();
     showToast('Marcada como pendente', 'success');
   } catch (err) {
@@ -4188,21 +4308,39 @@ function openHaulDetail(id) {
 
 function saleCard(s) {
   const status = s.status || 'pending';
-  const isPending = status === 'pending';
-  const amountColor = isPending ? 'yellow' : (status === 'cash' ? 'green' : 'blue');
+  const paidU = salePaidUnits(s);
+  const pendingU = salePendingUnits(s);
+  const hasPending = pendingU > 0;
+  const hasPaid = paidU > 0;
+  const amountColor = status === 'pending' ? 'yellow'
+                    : status === 'partial' ? 'orange'
+                    : status === 'cash'    ? 'green'
+                    : status === 'mbway'   ? 'blue'
+                    : 'green'; // paidmixed (fully paid, multiple methods)
 
-  const actions = isPending ? `
+  // Pay buttons appear while there are pending units; "reset" appears when anything is paid.
+  const payBtns = hasPending ? `
     <div class="pay-row">
-      <button class="pay-btn cash"  onclick="markSalePaid('${s.id}','cash')">${cashIcon} Dinheiro</button>
-      <button class="pay-btn mbway" onclick="markSalePaid('${s.id}','mbway')">${mbwayIcon} MB Way</button>
-    </div>` : `
+      <button class="pay-btn cash"  onclick="markSalePaid('${s.id}','cash')">${cashIcon} ${hasPaid ? 'Resto dinheiro' : 'Dinheiro'}</button>
+      <button class="pay-btn mbway" onclick="markSalePaid('${s.id}','mbway')">${mbwayIcon} ${hasPaid ? 'Resto MB Way' : 'MB Way'}</button>
+    </div>` : '';
+  const resetBtn = hasPaid ? `
     <div style="display:flex;justify-content:flex-end;">
       <button class="icon-btn" onclick="markSalePending('${s.id}')" aria-label="Marcar pendente" style="width:auto;padding:6px 10px;gap:5px;font-size:11px;color:var(--text-muted);">
-        ${clockIcon} Voltar a pendente
+        ${clockIcon} Repor pendente
       </button>
-    </div>`;
+    </div>`: '';
+  const actions = payBtns + resetBtn;
 
-  return `<div class="list-item ${isPending ? 'pending' : ''}">
+  // Partial summary line (only when the sale is genuinely split)
+  const byM = salePaidByMethod(s);
+  let paySummary = '';
+  if (hasPaid && hasPending) {
+    const methods = (byM.cash > 0 ? '💵' : '') + (byM.mbway > 0 ? '📱' : '');
+    paySummary = `<div class="list-item-meta"><span style="color:#fb923c;font-weight:600;">${paidU} paga(s) ${methods} · ${pendingU} pendente(s)</span></div>`;
+  }
+
+  return `<div class="list-item ${hasPending ? 'pending' : ''}">
     <div class="list-item-actions">
       <button class="icon-btn" onclick="openSheet('sale','${s.id}')" aria-label="Editar">${editIcon}</button>
       <button class="icon-btn danger" onclick="deleteSale('${s.id}')" aria-label="Apagar">${trashIcon}</button>
@@ -4227,8 +4365,13 @@ function saleCard(s) {
         return `<span style="color:var(--accent);">${fmt(s.totalPrice / Math.max(s.units, 1))}/un. média</span>`;
       })()}
     </div>
+    ${paySummary}
     <div style="display:flex;gap:4px;flex-wrap:wrap;">
-      ${(s.items || []).map(it => `<span class="badge badge-purple">${escapeHtml(it.flavor || '?')}${it.model ? ' · ' + escapeHtml(it.model) : ''} · ${it.units}v</span>`).join('')}
+      ${(s.items || []).map(it => {
+        const pu = Math.min(Math.max(parseInt(it.paidUnits) || 0, 0), parseInt(it.units) || 0);
+        const tag = pu > 0 ? ` · ${pu}${it.method === 'mbway' ? '📱' : '💵'}` : '';
+        return `<span class="badge badge-purple">${escapeHtml(it.flavor || '?')}${it.model ? ' · ' + escapeHtml(it.model) : ''} · ${it.units}v${tag}</span>`;
+      }).join('')}
     </div>
     ${s.customer ? `<div class="list-item-meta"><span>👤 <strong>${escapeHtml(s.customer)}</strong></span></div>` : ''}
     ${s.notes ? `<div class="list-item-notes">${escapeHtml(s.notes)}</div>` : ''}
@@ -4468,8 +4611,8 @@ function getCustomers() {
     sales.forEach(s => {
       totalUnits += s.units || 0;
       totalRevenue += s.totalPrice || 0;
-      if ((s.status || 'pending') === 'pending') totalPending += s.totalPrice || 0;
-      else totalPaid += s.totalPrice || 0;
+      totalPaid += salePaidAmount(s);        // per-unit paid portion
+      totalPending += salePendingAmount(s);  // per-unit pending portion
       if (!lastDate || s.date > lastDate) lastDate = s.date;
     });
     return { ...c, sales, totalUnits, totalRevenue, totalPaid, totalPending, lastDate };
@@ -4679,7 +4822,7 @@ function refreshWidgets() {
   // ── VENDAS (mês corrente) ──
   const salesMonth = cache.sales.filter(s => (s.date || '').startsWith(monthPrefix));
   let pendingAmt = 0;
-  salesMonth.forEach(s => { if ((s.status || 'pending') === 'pending') pendingAmt += (s.totalPrice || 0); });
+  salesMonth.forEach(s => { pendingAmt += salePendingAmount(s); });
   set('widget-sales-month', salesMonth.length);
   set('widget-sales-pending', pendingAmt > 0 ? `${fmt(pendingAmt)} pendente` : 'tudo pago ✓');
 
@@ -4831,6 +4974,7 @@ function refreshFinanceiroSheet() {
   const cashSet = new Set(), mbwaySet = new Set(), pendingSet = new Set();
   let realProfit = 0, realPaidCost = 0, realRevenuePaid = 0;
   const paidSet = new Set();
+  const allSet = new Set();  // union of all sale IDs (partial sales overlap buckets)
 
   activeHauls.forEach(h => {
     const stat = statsMap.get(h.id);
@@ -4843,12 +4987,13 @@ function refreshFinanceiroSheet() {
     stat.cashSalesIds.forEach(id => { cashSet.add(id); paidSet.add(id); });
     stat.mbwaySalesIds.forEach(id => { mbwaySet.add(id); paidSet.add(id); });
     stat.pendingSalesIds.forEach(id => pendingSet.add(id));
+    stat.anySalesIds.forEach(id => allSet.add(id));
     realProfit += stat.profit || 0;
     realPaidCost += stat.paidCost || 0;
     realRevenuePaid += stat.revenuePaid || 0;
   });
 
-  const totalSales = cashSet.size + mbwaySet.size + pendingSet.size;
+  const totalSales = allSet.size;  // distinct sales (a partial sale counts once)
   const realMargin = realRevenuePaid > 0 ? (realProfit / realRevenuePaid * 100) : 0;
 
   set('kpi-total-revenue', fmt(totalRevenue));
@@ -4965,10 +5110,12 @@ function refreshVendas() {
   const sales = getSales();
   let pendingAmt = 0, pendingCount = 0, receivedAmt = 0, receivedCount = 0;
   sales.forEach(s => {
-    const p = s.totalPrice || 0;
-    const st = s.status || 'pending';
-    if (st === 'pending') { pendingAmt  += p; pendingCount++; }
-    else                  { receivedAmt += p; receivedCount++; }
+    const pend = salePendingAmount(s);
+    const paid = salePaidAmount(s);
+    pendingAmt  += pend;
+    receivedAmt += paid;
+    if (pend > 0) pendingCount++;   // sales with any pending units
+    if (paid > 0) receivedCount++;  // sales with any paid units
   });
 
   set('sales-pending-amount', fmt(pendingAmt));
@@ -5028,7 +5175,7 @@ function groupSalesByDate(sales) {
     byDate[d].sales.push(s);
     byDate[d].units += s.units || 0;
     byDate[d].revenue += s.totalPrice || 0;
-    if ((s.status || 'pending') === 'pending') byDate[d].pending += s.totalPrice || 0;
+    byDate[d].pending += salePendingAmount(s);
   });
   return Object.values(byDate).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
 }
@@ -5134,15 +5281,15 @@ function dayCard(d) {
 function openDayDetail(dateStr) {
   const sales = getSales().filter(s => (s.date || 'sem-data') === dateStr);
   const sorted = sales.slice().sort((a, b) => {
-    const aP = (a.status || 'pending') === 'pending' ? 0 : 1;
-    const bP = (b.status || 'pending') === 'pending' ? 0 : 1;
+    const aP = salePendingUnits(a) > 0 ? 0 : 1;  // anything still owed first
+    const bP = salePendingUnits(b) > 0 ? 0 : 1;
     return aP - bP;
   });
   let units = 0, revenue = 0, pending = 0;
   sales.forEach(s => {
     units += s.units || 0;
     revenue += s.totalPrice || 0;
-    if ((s.status || 'pending') === 'pending') pending += s.totalPrice || 0;
+    pending += salePendingAmount(s);
   });
 
   document.getElementById('sheet-day-title').textContent = dayLabel(dateStr) + (dateStr !== 'sem-data' ? ' · ' + fmtDate(dateStr) : '');
@@ -5448,9 +5595,12 @@ function exportSalesAsCSV() {
   const escapeCsv = v => `"${String(v == null ? '' : v).replace(/\r?\n/g, ' ').replace(/"/g, '""')}"`;
   const lines = [headers.join(',')];
   sales.forEach(s => {
-    const itemsTxt = (s.items || []).map(i => `${i.units}x ${i.flavor}${i.model ? ' (' + i.model + ')' : ''}`).join(' | ');
-    const status = s.status === 'cash' ? 'Dinheiro'
-                 : s.status === 'mbway' ? 'MB Way' : 'Pendente';
+    const itemsTxt = (s.items || []).map(i => {
+      const pu = Math.min(Math.max(parseInt(i.paidUnits) || 0, 0), parseInt(i.units) || 0);
+      const paidTxt = pu > 0 ? ` [${pu} pg ${i.method === 'mbway' ? 'MBWay' : 'Dinheiro'}]` : '';
+      return `${i.units}x ${i.flavor}${i.model ? ' (' + i.model + ')' : ''}${paidTxt}`;
+    }).join(' | ');
+    const status = (STATUS[s.status] && STATUS[s.status].label) || 'Pendente';
     lines.push([
       s.date, s.customer || '', itemsTxt, s.units || 0,
       (s.totalPrice || 0).toFixed(2), status
