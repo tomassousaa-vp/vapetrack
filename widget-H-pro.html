@@ -30,8 +30,15 @@
   .demo-switch button.on{background:var(--accent);color:#fff}
 
   .screen{display:none}
-  .screen.on{display:block;animation:fade .35s ease}
-  @keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+  .screen.on{display:block}
+  /* entrada encadeada das cartas/botões sempre que um ecrã aparece */
+  .screen.on > *{animation:riseIn .5s cubic-bezier(.22,1,.36,1) both}
+  .screen.on > *:nth-child(1){animation-delay:.02s}
+  .screen.on > *:nth-child(2){animation-delay:.09s}
+  .screen.on > *:nth-child(3){animation-delay:.16s}
+  .screen.on > *:nth-child(4){animation-delay:.23s}
+  .screen.on > *:nth-child(5){animation-delay:.30s}
+  @keyframes riseIn{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
 
   .brand{display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:14px}
   .brand .dot{width:42px;height:42px;border-radius:13px;background:var(--accent);
@@ -58,7 +65,10 @@
   .chips{display:flex;flex-wrap:wrap;gap:9px}
   .chip{border:1.5px solid var(--line);background:#fff;color:var(--ink);font:inherit;font-weight:700;font-size:14px;
     padding:10px 16px;border-radius:12px;cursor:pointer;display:flex;align-items:center;gap:7px}
-  .chip.on{background:var(--accent);border-color:var(--accent);color:#fff}
+  .chip{transition:transform .12s ease,background .15s ease,border-color .15s ease}
+  .chip:active{transform:scale(.96)}
+  .chip.on{background:var(--accent);border-color:var(--accent);color:#fff;animation:chipPop .3s cubic-bezier(.34,1.56,.64,1)}
+  @keyframes chipPop{0%{transform:scale(1)}45%{transform:scale(1.06)}100%{transform:scale(1)}}
   .chip .puffs{color:var(--muted);font-weight:600;font-size:12px}
   .chip.on .puffs{color:rgba(255,255,255,.8)}
   .note-line{color:var(--subtle);font-size:12.5px;margin-top:12px;font-weight:600}
@@ -89,12 +99,18 @@
   .btn{width:100%;border:0;border-radius:14px;font-family:inherit;font-weight:700;font-size:16px;padding:15px;cursor:pointer;
     background:var(--accent);color:#fff;box-shadow:0 6px 16px rgba(91,83,232,.26)}
   .btn:active{transform:translateY(1px)}
+  /* pulso suave que convida ao toque — só quando o botão está ativo */
+  .btn:not(:disabled):not(.off):not(.ghost){animation:ctaPulse 2.6s ease-in-out infinite}
+  @keyframes ctaPulse{0%,100%{box-shadow:0 6px 16px rgba(91,83,232,.26)}50%{box-shadow:0 10px 26px rgba(91,83,232,.46)}}
   .btn.ghost{background:#fff;color:var(--accent);border:1.5px solid var(--line);box-shadow:none}
-  .btn:disabled,.btn.off{background:#E6E7EF;color:#fff;box-shadow:none;cursor:not-allowed}
+  .btn:disabled,.btn.off{background:#E6E7EF;color:#fff;box-shadow:none;cursor:not-allowed;animation:none}
 
   .center{text-align:center;padding:28px 18px}
-  .checkwrap{width:78px;height:78px;border-radius:50%;margin:0 auto 16px;display:grid;place-items:center;
-    background:var(--green);box-shadow:0 8px 22px rgba(23,160,106,.28)}
+  .checkwrap{position:relative;width:78px;height:78px;border-radius:50%;margin:0 auto 16px;display:grid;place-items:center;
+    background:var(--green);box-shadow:0 8px 22px rgba(23,160,106,.28);animation:checkPop .55s cubic-bezier(.34,1.56,.64,1) both}
+  .checkwrap::after{content:'';position:absolute;inset:0;border-radius:50%;border:3px solid var(--green);animation:ring 1.1s ease-out .2s}
+  @keyframes checkPop{0%{transform:scale(.4);opacity:0}60%{transform:scale(1.12)}100%{transform:scale(1);opacity:1}}
+  @keyframes ring{0%{transform:scale(1);opacity:.55}100%{transform:scale(1.7);opacity:0}}
   .checkwrap .c{font-size:40px;color:#fff}
   .center h2{font-size:23px;font-weight:800;color:var(--ink-strong);margin-bottom:8px;letter-spacing:-.4px}
   .center p{color:var(--muted);font-size:14px;margin-bottom:18px}
@@ -105,11 +121,17 @@
   .ref{color:var(--muted);font-size:13px;margin-bottom:14px;font-weight:600;text-align:center}
   .ref b{color:var(--ink-strong)}
   .steps{display:flex;flex-direction:column;gap:11px}
-  .tstep{display:flex;align-items:center;gap:13px;background:var(--field);border-radius:14px;padding:13px}
+  .tstep{display:flex;align-items:center;gap:13px;background:var(--field);border-radius:14px;padding:13px;
+    animation:stepIn .42s cubic-bezier(.22,1,.36,1) both}
+  .steps .tstep:nth-child(1){animation-delay:.04s}
+  .steps .tstep:nth-child(2){animation-delay:.13s}
+  .steps .tstep:nth-child(3){animation-delay:.22s}
+  @keyframes stepIn{from{opacity:0;transform:translateX(-14px)}to{opacity:1;transform:none}}
   .tstep .ico{width:34px;height:34px;border-radius:50%;flex:none;display:grid;place-items:center;font-size:15px;font-weight:700;color:#fff;background:var(--subtle)}
   .tstep.done .ico{background:var(--green)}
   .tstep.active{background:var(--accent-50)}
-  .tstep.active .ico{background:var(--accent)}
+  .tstep.active .ico{background:var(--accent);animation:dotPulse 1.6s ease-in-out infinite}
+  @keyframes dotPulse{0%,100%{box-shadow:0 0 0 0 rgba(91,83,232,.45)}50%{box-shadow:0 0 0 7px rgba(91,83,232,0)}}
   .tstep.reject .ico{background:var(--red)}
   .tstep .tlabel{font-weight:700;font-size:15px;color:var(--ink-strong)}
   .tstep .ttime{font-size:12.5px;color:var(--muted)}
