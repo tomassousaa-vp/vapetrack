@@ -11,6 +11,8 @@
   <title>VapeTrack</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <link rel="preconnect" href="https://aqsjgciiwmpodrdgakwf.supabase.co" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="manifest" href="/manifest.json">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -1469,7 +1471,7 @@
       <div class="settings-link-icon">⚙️</div>
       <div class="settings-link-body">
         <div class="settings-link-title">Definições</div>
-        <div class="settings-link-sub">Conta, preços, backup, ajuda</div>
+        <div class="settings-link-sub">Conta, backup, ajuda</div>
       </div>
       <div class="nav-card-arrow">→</div>
     </button>
@@ -1985,16 +1987,6 @@
     </div>
   </div>
 
-  <div id="sheet-pricing" style="display:none;">
-    <div class="sheet-header">
-      <div class="sheet-title">Preços de Venda</div>
-      <button class="sheet-close" data-close aria-label="Fechar">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-      </button>
-    </div>
-    <div class="sheet-body" id="pricing-content"></div>
-  </div>
-
   <!-- ACCOUNT -->
   <div id="sheet-account" style="display:none;">
     <div class="sheet-header">
@@ -2010,9 +2002,6 @@
         <div style="font-size:12px;color:var(--text-muted);margin-top:4px;">Sincronizado com a cloud ✓</div>
         <div style="font-size:11px;color:var(--text-muted);margin-top:6px;opacity:.6;" id="account-version">v—</div>
       </div>
-      <button type="button" class="btn btn-secondary" id="openPricingBtn">
-        💰 Preços de Venda
-      </button>
       <button type="button" class="btn btn-secondary" id="exportJsonBtn">
         📥 Backup completo (.json)
       </button>
@@ -2087,7 +2076,7 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
 });
 
 // App version — keep in sync with sw.js VERSION (used in account sheet for verification)
-const APP_VERSION = 'v47';
+const APP_VERSION = 'v50';
 
 let currentUser = null;
 let dataReady = false;
@@ -2198,48 +2187,6 @@ const DEFAULT_CATALOG = {
 };
 
 // ═══════════════════════════════════════
-// STORAGE WRAPPER (with in-memory fallback)
-// Some contexts (data: URLs, private mode) block localStorage.
-// We fall back to an in-memory store so the app keeps working.
-// ═══════════════════════════════════════
-const memStore = {};
-let storageOK = false;
-try {
-  const t = '__vt_test__';
-  window.localStorage.setItem(t, '1');
-  window.localStorage.removeItem(t);
-  storageOK = true;
-} catch (e) {
-  storageOK = false;
-  console.warn('localStorage indisponível, usando memória:', e.message);
-}
-const storage = {
-  getItem(k) {
-    if (storageOK) {
-      try { return window.localStorage.getItem(k); } catch { return memStore[k] ?? null; }
-    }
-    return memStore[k] ?? null;
-  },
-  setItem(k, v) {
-    if (storageOK) {
-      try { window.localStorage.setItem(k, v); return; } catch (e) { storageOK = false; }
-    }
-    memStore[k] = v;
-  },
-};
-
-// ═══════════════════════════════════════
-// MIGRATION + DATA
-// ═══════════════════════════════════════
-// (Removed dead code: legacy localStorage migration — never invoked since Supabase migration.)
-
-function getJSON(key, fallback) {
-  try { return JSON.parse(storage.getItem(key) || JSON.stringify(fallback)); }
-  catch { return fallback; }
-}
-function setJSON(key, val) { storage.setItem(key, JSON.stringify(val)); }
-
-// ═══════════════════════════════════════
 // DATA ACCESS — reads from in-memory cache (filled from Supabase on login)
 // ═══════════════════════════════════════
 const getHauls = () => cache.hauls;
@@ -2261,10 +2208,6 @@ const getLibModels = () => {
   Object.keys(getCatalog()).forEach(m => set.add(m));
   return [...set].sort();
 };
-const rememberFlavor = () => {}; // no-op — derived now
-const rememberModel  = () => {}; // no-op — derived now
-const setLibFlavors  = () => {}; // legacy compat
-const setLibModels   = () => {};
 
 // ═══════════════════════════════════════
 // DB ↔ JS CONVERTERS (snake_case ↔ camelCase)
@@ -2466,13 +2409,6 @@ async function savePricingDB(modelName, basePrice, promotions) {
   };
 }
 
-async function deletePricingDB(modelName) {
-  const { error } = await sb.from('pricing').delete()
-    .eq('user_id', currentUser.id).eq('model_name', modelName);
-  if (error) throw error;
-  delete cache.pricing[modelName];
-}
-
 // Core: calculate price for X units given an explicit pricing config
 // `pastUnitsSold` = units already sold from this source (counts toward promo max)
 function calcPriceFromConfig(pricing, units, pastUnitsSold = 0, applyPromo = true) {
@@ -2643,10 +2579,6 @@ function getHaulPricing(haul, modelName) {
 }
 
 // Legacy wrapper for places still using model-based lookup
-function calcSalePrice(modelName, units) {
-  return calcPriceFromConfig(cache.pricing[modelName], units);
-}
-
 function calcSaleTotalFromItems(items, applyPromo = true, excludeSaleId = null) {
   // FIFO simulation: drain from oldest active hauls first (strict chronological).
   // For each chunk (haul+model+units), use that haul's pricing.
@@ -2718,47 +2650,6 @@ function distributeItemsAcrossHaulsFIFO(items) {
   });
 
   return result;
-}
-
-// Breakdown showing how many units are at each price tier
-function calcPriceBreakdown(modelName, units) {
-  const pricing = cache.pricing[modelName];
-  const lines = [];
-  if (!pricing) return { lines, total: 0 };
-  units = parseInt(units) || 0;
-  if (units <= 0) return { lines, total: 0 };
-
-  const promos = (pricing.promotions || [])
-    .filter(p => p.minUnits > 0 && p.totalPrice >= 0)
-    .map(p => ({
-      minUnits: parseInt(p.minUnits),
-      totalPrice: parseFloat(p.totalPrice),
-      maxUnits: parseInt(p.maxUnits) || 0,
-    }))
-    .sort((a, b) => (a.totalPrice / a.minUnits) - (b.totalPrice / b.minUnits));
-
-  let remaining = units;
-  let total = 0;
-  for (const promo of promos) {
-    if (remaining < promo.minUnits) continue;
-    let available = remaining;
-    if (promo.maxUnits > 0) available = Math.min(available, promo.maxUnits);
-    const packs = Math.floor(available / promo.minUnits);
-    if (packs > 0) {
-      const unitsAtPromo = packs * promo.minUnits;
-      const subTotal = packs * promo.totalPrice;
-      const perUnit = promo.totalPrice / promo.minUnits;
-      lines.push({ units: unitsAtPromo, perUnit, subtotal: subTotal, kind: 'promo' });
-      total += subTotal;
-      remaining -= unitsAtPromo;
-    }
-  }
-  if (remaining > 0 && pricing.basePrice > 0) {
-    const subTotal = remaining * pricing.basePrice;
-    lines.push({ units: remaining, perUnit: pricing.basePrice, subtotal: subTotal, kind: 'base' });
-    total += subTotal;
-  }
-  return { lines, total };
 }
 
 // Breakdown for an entire sale (FIFO-aware, per-haul pricing)
@@ -2963,16 +2854,6 @@ async function wipeUserData(includeCatalog) {
   cache.sales = [];
 }
 
-// Seed library with catalog flavors/models on first run so chips work
-function seedLibraryFromCatalog() {
-  const cat = getCatalog();
-  Object.keys(cat).forEach(model => {
-    rememberModel(model);
-    (cat[model] || []).forEach(f => rememberFlavor(f));
-  });
-}
-
-const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2);
 
 // ═══════════════════════════════════════
 // FORMAT
@@ -3254,7 +3135,7 @@ let _openSheetEditId = null;
 function openSheet(view, editId) {
   _openSheetView = view;
   _openSheetEditId = editId;
-  ['sheet-picker','sheet-haul','sheet-haul-detail','sheet-sale','sheet-help','sheet-customer','sheet-customer-edit','sheet-day','sheet-account','sheet-pricing','sheet-financeiro','sheet-stock'].forEach(id => {
+  ['sheet-picker','sheet-haul','sheet-haul-detail','sheet-sale','sheet-help','sheet-customer','sheet-customer-edit','sheet-day','sheet-account','sheet-financeiro','sheet-stock'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.style.display = 'none';
   });
@@ -3286,9 +3167,6 @@ function openSheet(view, editId) {
   } else if (view === 'haul-detail') {
     document.getElementById('sheet-haul-detail').style.display = 'block';
     openHaulDetail(editId);
-  } else if (view === 'pricing') {
-    document.getElementById('sheet-pricing').style.display = 'block';
-    renderPricingUI();
   } else if (view === 'financeiro') {
     document.getElementById('sheet-financeiro').style.display = 'block';
     refreshFinanceiroSheet();
@@ -3995,13 +3873,6 @@ function refreshCustomersDatalist() {
   dl.innerHTML = names.map(n => `<option value="${escapeHtml(n)}">`).join('');
 }
 
-// ═══════════════════════════════════════
-// SALE HINTS (compat wrapper)
-// ═══════════════════════════════════════
-function updateSaleHints() {
-  updateSaleTotals();
-}
-
 async function handleSaleSubmit(e) {
   e.preventDefault();
   try {
@@ -4478,128 +4349,6 @@ function refreshForPage(p) {
 }
 
 // ═══════════════════════════════════════
-// PRICING UI
-// ═══════════════════════════════════════
-function renderPricingUI() {
-  const container = document.getElementById('pricing-content');
-  if (!container) return;
-
-  // Get all known models: catalog + any model used in hauls/sales
-  const known = new Set(Object.keys(getCatalog()));
-  cache.hauls.forEach(h => (h.items || []).forEach(it => { if (it.model) known.add(it.model); }));
-  cache.sales.forEach(s => (s.items || []).forEach(it => { if (it.model) known.add(it.model); }));
-  // Also include any with pricing already
-  Object.keys(cache.pricing).forEach(m => known.add(m));
-  const models = [...known].sort();
-
-  if (models.length === 0) {
-    container.innerHTML = '<div class="empty"><p>Sem modelos conhecidos. Adiciona um haul primeiro.</p></div>';
-    return;
-  }
-
-  container.innerHTML = `
-    <div style="font-size:13px;color:var(--text-muted);margin-bottom:6px;">
-      Define o preço por vape de cada modelo. Promoções aplicam-se automaticamente.
-    </div>
-    ${models.map(m => pricingCardHtml(m)).join('')}
-  `;
-
-  // Wire each card
-  models.forEach(m => wirePricingCard(m));
-}
-
-function pricingCardHtml(model) {
-  const p = cache.pricing[model] || { basePrice: 0, promotions: [] };
-  const id = 'pm-' + btoa(unescape(encodeURIComponent(model))).replace(/=/g, '');
-  return `
-    <div class="stock-card" data-model="${escapeHtml(model)}" data-id="${id}" style="margin-bottom:12px;">
-      <div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:14px;">${escapeHtml(model)}</div>
-
-      <div class="field" style="margin-bottom:14px;">
-        <label class="field-label">Preço base por vape (€)</label>
-        <input class="field-input pricing-base" type="number" step="0.01" min="0" placeholder="Ex: 12.00" value="${p.basePrice || ''}">
-      </div>
-
-      <div class="field" style="margin-bottom:10px;">
-        <label class="field-label">Promoções</label>
-        <div class="promo-list">
-          ${(p.promotions || []).map(pr => promoRowHtml(pr)).join('')}
-        </div>
-        <button type="button" class="add-item-btn pricing-add-promo" style="margin-top:6px;">
-          + Adicionar promoção
-        </button>
-        <span class="field-hint">Min = nº mínimo · €/vape = preço de cada vape na promo · Max = stock total da promoção (vazio = ilimitado)</span>
-      </div>
-
-      <button type="button" class="btn btn-primary pricing-save">Guardar</button>
-    </div>
-  `;
-}
-
-function promoRowHtml(p) {
-  const min = (p && p.minUnits) || '';
-  const unit = (p && p.minUnits > 0) ? (Math.round((p.totalPrice / p.minUnits) * 100) / 100) : '';
-  const max = (p && p.maxUnits) || '';
-  return `
-    <div class="promo-row" style="display:grid;grid-template-columns:1fr 1fr 1fr 42px;gap:6px;margin-bottom:6px;align-items:center;">
-      <input class="field-input promo-min" type="number" min="1" step="1" placeholder="Min" value="${min}" style="padding:10px;min-height:42px;font-size:13px;">
-      <input class="field-input promo-total" type="number" min="0" step="0.01" placeholder="€/vape" value="${unit}" style="padding:10px;min-height:42px;font-size:13px;">
-      <input class="field-input promo-max" type="number" min="0" step="1" placeholder="Max" value="${max}" style="padding:10px;min-height:42px;font-size:13px;">
-      <button type="button" class="item-card-remove promo-remove" style="height:42px;">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-      </button>
-    </div>
-  `;
-}
-
-function wirePricingCard(model) {
-  const cards = document.querySelectorAll('#pricing-content .stock-card');
-  const card = [...cards].find(c => c.dataset.model === model);
-  if (!card) return;
-
-  card.querySelector('.pricing-add-promo').addEventListener('click', () => {
-    const list = card.querySelector('.promo-list');
-    const div = document.createElement('div');
-    div.innerHTML = promoRowHtml(null);
-    const row = div.firstElementChild;
-    list.appendChild(row);
-    row.querySelector('.promo-remove').addEventListener('click', () => row.remove());
-  });
-
-  // Wire existing remove buttons
-  card.querySelectorAll('.promo-remove').forEach(btn => {
-    btn.addEventListener('click', () => btn.closest('.promo-row').remove());
-  });
-
-  card.querySelector('.pricing-save').addEventListener('click', async (e) => {
-    const btn = e.target;
-    const original = btn.textContent;
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner"></span>';
-    try {
-      const basePrice = parseFloat(card.querySelector('.pricing-base').value) || 0;
-      const promos = [];
-      card.querySelectorAll('.promo-row').forEach(row => {
-        const minUnits   = parseInt(row.querySelector('.promo-min').value) || 0;
-        const unitPrice  = parseFloat(row.querySelector('.promo-total').value) || 0;
-        const maxUnits   = parseInt(row.querySelector('.promo-max').value) || 0;
-        const totalPrice = Math.round(unitPrice * minUnits * 100) / 100;
-        if (minUnits > 0 && unitPrice >= 0) {
-          promos.push({ minUnits, totalPrice, maxUnits });
-        }
-      });
-      await savePricingDB(model, basePrice, promos);
-      showToast('Preços guardados ✓', 'success');
-    } catch (err) {
-      showToast('Erro: ' + (err.message || err), 'error');
-    } finally {
-      btn.disabled = false;
-      btn.textContent = original;
-    }
-  });
-}
-
-// ═══════════════════════════════════════
 // CUSTOMERS
 // ═══════════════════════════════════════
 function getCustomers() {
@@ -4920,34 +4669,60 @@ function refreshStockSheet() {
   set('stock-sheet-total', `${totalStock} vape(s) disponível(is)`);
   document.getElementById('stock-sheet-list').innerHTML = stockGroupedHtml();
 
-  // Promotions available list
+  // Promotions list — grouped per active haul. Every haul with stock gets an
+  // entry to add/edit promotions, even when it currently has none available.
   const { groups, totalAvailable } = getAvailablePromos();
   set('stock-promos-count', totalAvailable === 0 ? 'nenhuma' : `${totalAvailable} disponível(is)`);
   const listEl = document.getElementById('stock-promos-list');
   if (!listEl) return;
 
-  if (groups.length === 0) {
-    listEl.innerHTML = `<div style="padding:14px;color:var(--text-muted);font-size:13px;text-align:center;">Não há promoções ativas em hauls com stock disponível.</div>`;
+  // Index available-promo groups by haul id (a haul may span several models)
+  const groupsByHaul = new Map();
+  groups.forEach(g => {
+    if (!groupsByHaul.has(g.haul.id)) groupsByHaul.set(g.haul.id, []);
+    groupsByHaul.get(g.haul.id).push(g);
+  });
+
+  // Any active haul that still has stock can have promotions added/edited.
+  const promoHauls = activeHauls.filter(h => {
+    const stat = statsMap.get(h.id);
+    return stat && (stat.remainingTotal || 0) > 0;
+  });
+
+  if (promoHauls.length === 0) {
+    listEl.innerHTML = `<div style="padding:14px;color:var(--text-muted);font-size:13px;text-align:center;">Não há hauls ativos com stock.</div>`;
     return;
   }
 
-  listEl.innerHTML = groups.map(g => {
-    const haulLabel = (g.haul.orderNumber ? `Order #${g.haul.orderNumber} · ` : '') + fmtDate(g.haul.date || '');
-    const lines = g.lines.map(l => {
-      const right = l.isUnlimited
-        ? '<span style="color:var(--green);font-weight:700;">ilimitada</span>'
-        : `<span style="color:var(--green);font-weight:700;">${l.remaining}</span> <span style="color:var(--text-muted);font-size:11px;">/ ${l.max} restantes</span>`;
-      return `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-top:1px solid var(--border);font-size:13px;">
-        <span style="color:var(--text);">${escapeHtml(l.label)}</span>
-        ${right}
-      </div>`;
-    }).join('');
-    return `<div style="padding:10px 0;">
-      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;">
-        <strong style="color:var(--text);font-size:14px;">${escapeHtml(g.model || 'sem modelo')}</strong>
-        <span style="font-size:11px;color:var(--text-muted);">${escapeHtml(haulLabel)}</span>
+  listEl.innerHTML = promoHauls.map(h => {
+    const haulLabel = (h.orderNumber ? `Order #${h.orderNumber} · ` : '') + fmtDate(h.date || '');
+    const hGroups = groupsByHaul.get(h.id) || [];
+    let body;
+    if (hGroups.length === 0) {
+      body = `<div style="padding:8px 0;color:var(--text-muted);font-size:12.5px;">Sem promoções neste haul.</div>`;
+    } else {
+      body = hGroups.map(g => {
+        const lines = g.lines.map(l => {
+          const right = l.isUnlimited
+            ? '<span style="color:var(--green);font-weight:700;">ilimitada</span>'
+            : `<span style="color:var(--green);font-weight:700;">${l.remaining}</span> <span style="color:var(--text-muted);font-size:11px;">/ ${l.max} restantes</span>`;
+          return `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;">
+            <span style="color:var(--text);">${escapeHtml(l.label)}</span>
+            ${right}
+          </div>`;
+        }).join('');
+        return `<div style="margin-top:4px;">
+          <div style="font-size:12px;color:var(--text-muted);text-transform:none;letter-spacing:0;">${escapeHtml(g.model || 'sem modelo')}</div>
+          ${lines}
+        </div>`;
+      }).join('');
+    }
+    return `<div style="padding:12px 0;border-top:1px solid var(--border);">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:2px;">
+        <strong style="color:var(--text);font-size:14px;">${escapeHtml(haulLabel)}</strong>
+        <button type="button" class="btn btn-secondary" style="width:auto;padding:7px 12px;font-size:12px;white-space:nowrap;" onclick="closeSheet();setTimeout(()=>openSheet('haul','${h.id}'),200)">+ Promoção / editar</button>
       </div>
-      ${lines}
+      ${body}
     </div>`;
   }).join('');
 }
@@ -5740,7 +5515,6 @@ function wireAuthEvents() {
   document.getElementById('authForm').addEventListener('submit', handleAuthSubmit);
   document.getElementById('authToggleBtn').addEventListener('click', () => setAuthMode(!isSignUpMode));
   document.getElementById('logoutBtn').addEventListener('click', handleLogout);
-  document.getElementById('openPricingBtn').addEventListener('click', () => openSheet('pricing'));
   document.getElementById('exportJsonBtn').addEventListener('click', exportAllAsJSON);
   document.getElementById('exportCsvBtn').addEventListener('click', exportSalesAsCSV);
   document.getElementById('importJsonBtn').addEventListener('click', () => {

@@ -1,5 +1,5 @@
 // VapeTrack Service Worker — offline support + auto-update
-const VERSION = 'vapetrack-v47-no-cents';
+const VERSION = 'vapetrack-v50-promos';
 const CACHE = `vt-cache-${VERSION}`;
 const ASSETS = [
   '/',
@@ -18,6 +18,19 @@ const NO_CACHE_HOSTS = [
 
 function isNoCacheHost(hostname) {
   return NO_CACHE_HOSTS.some(h => hostname === h || hostname.endsWith('.' + h));
+}
+
+// Cross-origin hosts whose static assets are safe to cache (script libs + fonts).
+// These are versioned/immutable URLs, so caching them is safe and removes the
+// render-blocking network round-trip on every cold start (fixes ~3s black screen).
+const CACHEABLE_CDN_HOSTS = [
+  'cdn.jsdelivr.net',      // supabase-js library
+  'fonts.googleapis.com',  // Google Fonts CSS
+  'fonts.gstatic.com',     // Google Fonts files
+];
+
+function isCacheableCdnHost(hostname) {
+  return CACHEABLE_CDN_HOSTS.some(h => hostname === h || hostname.endsWith('.' + h));
 }
 
 // Install: pre-cache core assets
@@ -92,8 +105,26 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Cross-origin (CDN, fonts): let browser handle, don't intercept
-  // (avoids accidentally caching stale third-party resources)
+  // Cross-origin CDN libs + fonts: stale-while-revalidate.
+  // Serve instantly from cache (no network wait on cold start), then refresh
+  // the cached copy in the background for next time.
+  if (isCacheableCdnHost(url.hostname)) {
+    event.respondWith(
+      caches.match(req).then((cached) => {
+        const network = fetch(req).then((res) => {
+          if (res && (res.ok || res.type === 'opaque')) {
+            const clone = res.clone();
+            caches.open(CACHE).then((c) => c.put(req, clone));
+          }
+          return res;
+        }).catch(() => cached);
+        return cached || network;
+      })
+    );
+    return;
+  }
+
+  // Any other cross-origin: let browser handle, don't intercept
 });
 
 // Allow page to trigger an immediate update
