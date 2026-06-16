@@ -1707,6 +1707,29 @@
     </form>
   </div>
 
+  <!-- HAUL PROMOS ONLY (edição rápida) -->
+  <div id="sheet-haul-promos" style="display:none;">
+    <div class="sheet-header">
+      <div class="sheet-title">Promoções do haul</div>
+      <button class="sheet-close" data-close aria-label="Fechar">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <form class="sheet-body" id="haul-promos-form" novalidate>
+      <input type="hidden" id="hpromo-haul-id">
+      <div id="hpromo-haul-label" style="margin-bottom:14px;font-weight:600;color:var(--text);font-size:14px;"></div>
+
+      <div class="field">
+        <label class="field-label">Promoções deste haul</label>
+        <div class="promo-list" id="hpromo-list"></div>
+        <button type="button" class="add-item-btn" id="hpromo-add">+ Adicionar promoção</button>
+        <span class="field-hint">Min = nº mínimo de vapes da promo · €/vape = preço de cada vape na promo · Max = <strong>stock total da promoção</strong> (vazio = ilimitado).</span>
+      </div>
+
+      <button type="submit" class="btn btn-primary">Guardar promoções</button>
+    </form>
+  </div>
+
   <!-- SALE FORM -->
   <div id="sheet-sale" style="display:none;">
     <div class="sheet-header">
@@ -3135,7 +3158,7 @@ let _openSheetEditId = null;
 function openSheet(view, editId) {
   _openSheetView = view;
   _openSheetEditId = editId;
-  ['sheet-picker','sheet-haul','sheet-haul-detail','sheet-sale','sheet-help','sheet-customer','sheet-customer-edit','sheet-day','sheet-account','sheet-financeiro','sheet-stock'].forEach(id => {
+  ['sheet-picker','sheet-haul','sheet-haul-promos','sheet-haul-detail','sheet-sale','sheet-help','sheet-customer','sheet-customer-edit','sheet-day','sheet-account','sheet-financeiro','sheet-stock'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.style.display = 'none';
   });
@@ -3145,6 +3168,9 @@ function openSheet(view, editId) {
   } else if (view === 'haul') {
     document.getElementById('sheet-haul').style.display = 'block';
     prepareHaulForm(editId);
+  } else if (view === 'haul-promos') {
+    document.getElementById('sheet-haul-promos').style.display = 'block';
+    prepareHaulPromosForm(editId);
   } else if (view === 'sale') {
     document.getElementById('sheet-sale').style.display = 'block';
     prepareSaleForm(editId);
@@ -3568,6 +3594,59 @@ async function handleHaulSubmit(e) {
     showToast('Erro: ' + (err.message || err), 'error');
   } finally {
     if (submitBtn) { submitBtn.disabled = false; submitBtn.innerHTML = 'Guardar Haul'; }
+  }
+}
+
+// ── Edição rápida só de promoções (a partir do sheet de stock) ──
+function prepareHaulPromosForm(haulId) {
+  const h = getHauls().find(x => x.id === haulId);
+  if (!h) { showToast('Haul não encontrado', 'error'); return; }
+  document.getElementById('hpromo-haul-id').value = h.id;
+  const haulLabel = (h.orderNumber ? `Order #${h.orderNumber} · ` : '') + fmtDate(h.date || '');
+  document.getElementById('hpromo-haul-label').textContent = haulLabel;
+  renderHpromoList(h.sellPromotions || []);
+}
+
+function renderHpromoList(promos) {
+  const wrap = document.getElementById('hpromo-list');
+  if (!wrap) return;
+  wrap.innerHTML = (promos || []).map(p => haulPromoRowHtml(p)).join('');
+  wrap.querySelectorAll('.promo-remove').forEach(btn => {
+    btn.addEventListener('click', () => btn.closest('.promo-row').remove());
+  });
+}
+
+function readHpromoList() {
+  const rows = document.querySelectorAll('#hpromo-list .promo-row');
+  const promos = [];
+  rows.forEach(row => {
+    const minUnits   = parseInt(row.querySelector('.promo-min').value) || 0;
+    const unitPrice  = parseFloat(row.querySelector('.promo-total').value) || 0;
+    const maxUnits   = parseInt(row.querySelector('.promo-max').value) || 0;
+    const totalPrice = Math.round(unitPrice * minUnits * 100) / 100;
+    if (minUnits > 0 && unitPrice >= 0) promos.push({ minUnits, totalPrice, maxUnits });
+  });
+  return promos;
+}
+
+async function handleHaulPromosSubmit(e) {
+  e.preventDefault();
+  const submitBtn = e.target.querySelector('button[type=submit]');
+  try {
+    const id = document.getElementById('hpromo-haul-id').value;
+    const h = getHauls().find(x => x.id === id);
+    if (!h) { showToast('Haul não encontrado', 'error'); return; }
+    const updated = { ...h, sellPromotions: readHpromoList() };
+    if (submitBtn) { submitBtn.disabled = true; submitBtn.innerHTML = '<span class="spinner"></span>'; }
+    await addOrUpdateHaul(updated);
+    closeSheet();
+    refreshAll();
+    showToast('Promoções atualizadas ✓', 'success');
+  } catch (err) {
+    console.error(err);
+    showToast('Erro: ' + (err.message || err), 'error');
+  } finally {
+    if (submitBtn) { submitBtn.disabled = false; submitBtn.innerHTML = 'Guardar promoções'; }
   }
 }
 
@@ -4720,7 +4799,7 @@ function refreshStockSheet() {
     return `<div style="padding:12px 0;border-top:1px solid var(--border);">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:2px;">
         <strong style="color:var(--text);font-size:14px;">${escapeHtml(haulLabel)}</strong>
-        <button type="button" class="btn btn-secondary" style="width:auto;padding:7px 12px;font-size:12px;white-space:nowrap;" onclick="closeSheet();setTimeout(()=>openSheet('haul','${h.id}'),200)">+ Promoção / editar</button>
+        <button type="button" class="btn btn-secondary" style="width:auto;padding:7px 12px;font-size:12px;white-space:nowrap;" onclick="closeSheet();setTimeout(()=>openSheet('haul-promos','${h.id}'),200)">+ Promoção / editar</button>
       </div>
       ${body}
     </div>`;
@@ -5202,6 +5281,19 @@ function wireEvents() {
   const haulAddPromo = document.getElementById('haul-add-promo');
   if (haulAddPromo) haulAddPromo.addEventListener('click', () => {
     const wrap = document.getElementById('haul-promos-list');
+    const div = document.createElement('div');
+    div.innerHTML = haulPromoRowHtml(null);
+    const row = div.firstElementChild;
+    wrap.appendChild(row);
+    row.querySelector('.promo-remove').addEventListener('click', () => row.remove());
+  });
+
+  // Sheet de promoções (edição rápida)
+  const hpromoForm = document.getElementById('haul-promos-form');
+  if (hpromoForm) hpromoForm.addEventListener('submit', handleHaulPromosSubmit);
+  const hpromoAdd = document.getElementById('hpromo-add');
+  if (hpromoAdd) hpromoAdd.addEventListener('click', () => {
+    const wrap = document.getElementById('hpromo-list');
     const div = document.createElement('div');
     div.innerHTML = haulPromoRowHtml(null);
     const row = div.firstElementChild;
