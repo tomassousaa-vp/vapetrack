@@ -144,14 +144,14 @@
   .track-toggle button{flex:1;font:inherit;font-size:12px;font-weight:700;padding:10px;border-radius:11px;border:1.5px solid var(--line);background:#fff;color:var(--muted);cursor:pointer}
   .track-toggle button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
 
-  /* confetes (só no estado Aprovado) */
-  .confetti-piece{position:fixed;top:-14px;z-index:60;pointer-events:none;border-radius:2px;
-    will-change:transform,opacity;animation:confettiFall linear forwards}
-  @keyframes confettiFall{
-    0%{transform:translate(0,0) rotateZ(0);opacity:1}
-    100%{transform:translate(var(--dx,0),112vh) rotateZ(var(--rot,720deg));opacity:.85}}
-
-  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+  /* confetes (só no estado Aprovado): saltam para cima e depois caem */
+  .confetti-piece{position:fixed;left:50vw;top:56vh;z-index:60;pointer-events:none;border-radius:2px;
+    will-change:transform,opacity;animation:confettiPop cubic-bezier(.18,.7,.35,1) forwards}
+  @keyframes confettiPop{
+    0%{transform:translate(0,0) rotateZ(0) scale(.5);opacity:0}
+    10%{opacity:1}
+    35%{transform:translate(calc(var(--dx,0)*.6), var(--peak,-40vh)) rotateZ(calc(var(--rot,360deg)*.5)) scale(1)}
+    100%{transform:translate(var(--dx,0), 55vh) rotateZ(var(--rot,360deg)) scale(1);opacity:.85}}
 </style>
 </head>
 <body>
@@ -293,22 +293,20 @@
   }
 
   function launchConfetti(){
-    if(window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     const colors=['#5B53E8','#17A06A','#FFC83D','#FF7A59','#34C3FF','#E5484D'];
-    for(let i=0;i<46;i++){
+    for(let i=0;i<54;i++){
       const p=document.createElement('div'); p.className='confetti-piece';
-      p.style.left=(Math.random()*100)+'vw';
       p.style.background=colors[i%colors.length];
-      p.style.width=(7+Math.random()*5)+'px';
+      p.style.width=(7+Math.random()*6)+'px';
       p.style.height=(10+Math.random()*8)+'px';
       if(Math.random()<0.5) p.style.borderRadius='50%';
-      const dur=2.4+Math.random()*1.6;
+      const dur=1.7+Math.random()*1.1;
       p.style.animationDuration=dur+'s';
-      p.style.animationDelay=(Math.random()*0.3)+'s';
-      p.style.setProperty('--dx',(Math.random()*180-90)+'px');
-      p.style.setProperty('--rot',(360+Math.random()*720)+'deg');
+      p.style.setProperty('--dx',((Math.random()*2-1)*46)+'vw');
+      p.style.setProperty('--peak',(-(22+Math.random()*38))+'vh');
+      p.style.setProperty('--rot',((Math.random()*2-1)*720)+'deg');
       document.body.appendChild(p);
-      setTimeout(()=>p.remove(),(dur+0.5)*1000);
+      setTimeout(()=>p.remove(), dur*1000+250);
     }
   }
 
