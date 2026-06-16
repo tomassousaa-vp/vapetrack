@@ -10,15 +10,16 @@
 <style>
   *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
   :root{
-    --ink:#5B4A66; --ink-strong:#3F3149; --muted:#9C8FA8; --subtle:#BBAFC6;
-    --card:#FFFFFF; --line:#F0E8F6;
-    --pink:#FF8FB1; --pink-2:#FFD6E4; --lilac:#B79CED; --lilac-2:#E7DCFB;
-    --mint:#7FE0C3; --mint-2:#D7F6EC; --peach:#FFC59B; --yellow:#FFE082; --red:#FF6B8A;
+    --ink:#4A3B57; --ink-strong:#2E2240; --muted:#8F82A0; --subtle:#B4A8C2;
+    --card:#FFFFFF; --line:#EFE6FB;
+    --pink:#FF2E8B; --pink-2:#FFD0E4; --lilac:#7B3DFF; --lilac-2:#E6D9FF;
+    --mint:#06E0B6; --mint-2:#C9F8EE; --peach:#FFA964; --yellow:#FFC73A; --red:#FF2E63;
     --r:26px; --r-sm:18px;
   }
   body{font-family:'Quicksand',system-ui,sans-serif;color:var(--ink);min-height:100vh;
     padding:22px 16px 56px;line-height:1.5;font-weight:600;
-    background:linear-gradient(165deg,#FFE3EE 0%,#EADCFB 48%,#D7F6EC 100%)}
+    background:linear-gradient(160deg,#FF4FA0 0%,#A24BFF 50%,#16E0C5 100%);
+    background-attachment:fixed}
   .wrap{max-width:430px;margin:0 auto}
 
   .demo-switch{display:flex;gap:6px;background:rgba(255,255,255,.6);border-radius:999px;padding:5px;margin-bottom:14px;
@@ -26,7 +27,7 @@
   .demo-switch button{flex:1;border:0;background:transparent;color:var(--muted);font:inherit;font-weight:700;font-size:11.5px;
     padding:9px 4px;border-radius:999px;cursor:pointer}
   .demo-switch button.on{background:linear-gradient(135deg,var(--pink),var(--lilac));color:#fff;box-shadow:0 6px 14px rgba(255,143,177,.4)}
-  .demo-note{text-align:center;color:var(--muted);font-size:12px;margin-bottom:20px;font-weight:600}
+  .demo-note{text-align:center;color:rgba(255,255,255,.9);font-size:12px;margin-bottom:20px;font-weight:700}
 
   .screen{display:none}
   .screen.on{display:block;animation:bounce .4s cubic-bezier(.34,1.56,.64,1)}
@@ -35,9 +36,9 @@
   .brand{display:flex;align-items:center;justify-content:center;gap:11px;margin-bottom:12px}
   .brand .dot{width:44px;height:44px;border-radius:16px;background:linear-gradient(135deg,var(--pink),var(--lilac));
     display:grid;place-items:center;font-size:21px;box-shadow:0 10px 22px rgba(255,143,177,.4)}
-  .brand h1{font-family:'Baloo 2',cursive;font-size:21px;font-weight:800;color:var(--ink-strong)}
-  .greet{font-family:'Baloo 2',cursive;font-size:33px;font-weight:800;color:var(--ink-strong);margin-bottom:4px;line-height:1.1;text-align:center}
-  .sub{color:var(--muted);font-size:14.5px;margin-bottom:20px;text-align:center}
+  .brand h1{font-family:'Baloo 2',cursive;font-size:21px;font-weight:800;color:#fff;text-shadow:0 2px 10px rgba(123,61,255,.3)}
+  .greet{font-family:'Baloo 2',cursive;font-size:33px;font-weight:800;color:#fff;margin-bottom:4px;line-height:1.1;text-align:center;text-shadow:0 4px 18px rgba(0,0,0,.14)}
+  .sub{color:rgba(255,255,255,.95);font-size:14.5px;margin-bottom:20px;text-align:center;font-weight:600;text-shadow:0 2px 10px rgba(0,0,0,.1)}
 
   .card{background:var(--card);border-radius:var(--r);padding:18px;margin-bottom:14px;box-shadow:0 14px 30px rgba(183,156,237,.22)}
 
@@ -52,14 +53,15 @@
   .chips{display:flex;flex-wrap:wrap;gap:9px}
   .chip{border:2px solid var(--lilac-2);background:#FCF9FF;color:var(--ink);font:inherit;font-weight:700;font-size:14px;
     padding:10px 16px;border-radius:999px;cursor:pointer;display:flex;align-items:center;gap:7px}
-  .chip.on{background:linear-gradient(135deg,var(--lilac-2),var(--pink-2));border-color:var(--lilac);color:var(--ink-strong)}
+  .chip.on{background:linear-gradient(135deg,var(--pink),var(--lilac));border-color:transparent;color:#fff;box-shadow:0 8px 18px rgba(255,46,139,.35)}
   .chip .puffs{color:var(--muted);font-weight:600;font-size:12px}
+  .chip.on .puffs{color:rgba(255,255,255,.85)}
   .note-line{color:var(--subtle);font-size:12.5px;margin-top:12px;font-weight:600}
 
   .flavor{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 14px;border-radius:18px;
     background:#FCF9FF;margin-bottom:11px}
   .flavor:last-child{margin-bottom:0}
-  .flavor .emo{font-size:22px;margin-right:2px}
+  .flavor .emo{font-size:22px;margin-right:2px;letter-spacing:1px;white-space:nowrap}
   .flavor .fname{font-weight:700;font-size:15px;color:var(--ink-strong)}
   .flavor .fhint{display:block;color:var(--red);font-size:12px;margin-top:2px;font-weight:700;opacity:0;transition:opacity .2s}
   .flavor.limit{background:var(--pink-2)}
@@ -92,8 +94,8 @@
   .linkbox code{flex:1;text-align:left;font-size:12.5px;color:var(--lilac);font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .linkbox .copy{border:0;background:linear-gradient(135deg,var(--pink),var(--lilac));color:#fff;font:inherit;font-weight:700;font-size:13px;padding:9px 13px;border-radius:12px;cursor:pointer}
 
-  .ref{color:var(--muted);font-size:13px;margin-bottom:14px;font-weight:600}
-  .ref b{color:var(--ink-strong)}
+  .ref{color:rgba(255,255,255,.95);font-size:13px;margin-bottom:14px;font-weight:700;text-shadow:0 2px 10px rgba(0,0,0,.1)}
+  .ref b{color:#fff}
   .steps{display:flex;flex-direction:column;gap:12px}
   .tstep{display:flex;align-items:center;gap:13px;background:#FCF9FF;border-radius:18px;padding:13px}
   .tstep .ico{width:36px;height:36px;border-radius:50%;flex:none;display:grid;place-items:center;font-size:16px;font-weight:700;color:#fff;background:var(--subtle)}
@@ -170,8 +172,8 @@
 <script>
   const MODELS = [
     { id:'kingpro40', name:'KingPro', puffs:'40k', flavors:[
-      { name:'Cherry Cola', stock:1, emo:'🍒' },{ name:'Lemon Lime', stock:8, emo:'🍋' },{ name:'Watermelon Ice', stock:5, emo:'🍉' },
-      { name:'Blueberry', stock:3, emo:'🫐' },{ name:'Strawberry Mango', stock:6, emo:'🍓' },
+      { name:'Cherry Cola', stock:1, emo:'🍒🥤' },{ name:'Lemon Lime', stock:8, emo:'🍋🍈' },{ name:'Watermelon Ice', stock:5, emo:'🍉🧊' },
+      { name:'Blueberry', stock:3, emo:'🫐' },{ name:'Strawberry Mango', stock:6, emo:'🍓🥭' },
     ]},
   ];
   let flavors = MODELS[0].flavors;
