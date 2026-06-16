@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Puff — Tema F (Candy)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=Quicksand:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  :root{
+    --ink:#5B4A66; --ink-strong:#3F3149; --muted:#9C8FA8; --subtle:#BBAFC6;
+    --card:#FFFFFF; --line:#F0E8F6;
+    --pink:#FF8FB1; --pink-2:#FFD6E4; --lilac:#B79CED; --lilac-2:#E7DCFB;
+    --mint:#7FE0C3; --mint-2:#D7F6EC; --peach:#FFC59B; --yellow:#FFE082; --red:#FF6B8A;
+    --r:26px; --r-sm:18px;
+  }
+  body{font-family:'Quicksand',system-ui,sans-serif;color:var(--ink);min-height:100vh;
+    padding:22px 16px 56px;line-height:1.5;font-weight:600;
+    background:linear-gradient(165deg,#FFE3EE 0%,#EADCFB 48%,#D7F6EC 100%)}
+  .wrap{max-width:430px;margin:0 auto}
+
+  .demo-switch{display:flex;gap:6px;background:rgba(255,255,255,.6);border-radius:999px;padding:5px;margin-bottom:14px;
+    box-shadow:0 8px 22px rgba(183,156,237,.25)}
+  .demo-switch button{flex:1;border:0;background:transparent;color:var(--muted);font:inherit;font-weight:700;font-size:11.5px;
+    padding:9px 4px;border-radius:999px;cursor:pointer}
+  .demo-switch button.on{background:linear-gradient(135deg,var(--pink),var(--lilac));color:#fff;box-shadow:0 6px 14px rgba(255,143,177,.4)}
+  .demo-note{text-align:center;color:var(--muted);font-size:12px;margin-bottom:20px;font-weight:600}
+
+  .screen{display:none}
+  .screen.on{display:block;animation:bounce .4s cubic-bezier(.34,1.56,.64,1)}
+  @keyframes bounce{from{opacity:0;transform:scale(.96) translateY(8px)}to{opacity:1;transform:none}}
+
+  .brand{display:flex;align-items:center;justify-content:center;gap:11px;margin-bottom:12px}
+  .brand .dot{width:44px;height:44px;border-radius:16px;background:linear-gradient(135deg,var(--pink),var(--lilac));
+    display:grid;place-items:center;font-size:21px;box-shadow:0 10px 22px rgba(255,143,177,.4)}
+  .brand h1{font-family:'Baloo 2',cursive;font-size:21px;font-weight:800;color:var(--ink-strong)}
+  .greet{font-family:'Baloo 2',cursive;font-size:33px;font-weight:800;color:var(--ink-strong);margin-bottom:4px;line-height:1.1;text-align:center}
+  .sub{color:var(--muted);font-size:14.5px;margin-bottom:20px;text-align:center}
+
+  .card{background:var(--card);border-radius:var(--r);padding:18px;margin-bottom:14px;box-shadow:0 14px 30px rgba(183,156,237,.22)}
+
+  .field{margin-bottom:14px}
+  .field:last-child{margin-bottom:0}
+  .field span{display:block;font-size:13px;color:var(--lilac);font-weight:700;margin-bottom:7px}
+  .field input{width:100%;border:2px solid var(--line);background:#FCF9FF;color:var(--ink-strong);font:inherit;font-weight:600;font-size:15px;padding:14px 16px;border-radius:16px}
+  .field input:focus{outline:none;border-color:var(--lilac)}
+  .field input::placeholder{color:var(--subtle)}
+
+  .sec-label{font-family:'Baloo 2',cursive;font-size:16px;color:var(--ink-strong);font-weight:700;margin-bottom:12px}
+  .chips{display:flex;flex-wrap:wrap;gap:9px}
+  .chip{border:2px solid var(--lilac-2);background:#FCF9FF;color:var(--ink);font:inherit;font-weight:700;font-size:14px;
+    padding:10px 16px;border-radius:999px;cursor:pointer;display:flex;align-items:center;gap:7px}
+  .chip.on{background:linear-gradient(135deg,var(--lilac-2),var(--pink-2));border-color:var(--lilac);color:var(--ink-strong)}
+  .chip .puffs{color:var(--muted);font-weight:600;font-size:12px}
+  .note-line{color:var(--subtle);font-size:12.5px;margin-top:12px;font-weight:600}
+
+  .flavor{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 14px;border-radius:18px;
+    background:#FCF9FF;margin-bottom:11px}
+  .flavor:last-child{margin-bottom:0}
+  .flavor .emo{font-size:22px;margin-right:2px}
+  .flavor .fname{font-weight:700;font-size:15px;color:var(--ink-strong)}
+  .flavor .fhint{display:block;color:var(--red);font-size:12px;margin-top:2px;font-weight:700;opacity:0;transition:opacity .2s}
+  .flavor.limit{background:var(--pink-2)}
+  .flavor.limit .fhint{opacity:1}
+  .stepper{display:flex;align-items:center;gap:4px;flex:none}
+  .stepper button{width:38px;height:38px;border:0;color:#fff;font-size:21px;font-weight:700;cursor:pointer;border-radius:50%;display:grid;place-items:center;
+    box-shadow:0 6px 14px rgba(255,143,177,.35)}
+  .stepper button.minus{background:linear-gradient(135deg,#FFB3C8,#FF8FB1)}
+  .stepper button.plus{background:linear-gradient(135deg,var(--lilac),#9B7FE0)}
+  .stepper button:active{transform:scale(.92)}
+  .stepper .qty{min-width:30px;text-align:center;font-weight:800;font-size:17px;color:var(--ink-strong);font-variant-numeric:tabular-nums}
+  .stepper .qty.zero{color:var(--subtle)}
+
+  .summary{display:flex;justify-content:space-between;align-items:center;color:var(--muted);font-size:14px;padding:4px 6px 16px;font-weight:700}
+  .summary b{color:var(--ink-strong);font-size:19px;font-family:'Baloo 2',cursive}
+
+  .btn{width:100%;border:0;border-radius:999px;font-family:'Baloo 2',cursive;font-weight:700;font-size:18px;padding:16px;cursor:pointer;
+    background:linear-gradient(135deg,var(--pink),var(--lilac));color:#fff;box-shadow:0 12px 26px rgba(255,143,177,.45)}
+  .btn:active{transform:translateY(1px) scale(.99)}
+  .btn.ghost{background:#fff;color:var(--lilac);box-shadow:0 8px 20px rgba(183,156,237,.2)}
+  .btn:disabled,.btn.off{background:#E7DEF0;color:#fff;box-shadow:none;cursor:not-allowed}
+
+  .center{text-align:center;padding:30px 18px}
+  .checkwrap{width:88px;height:88px;border-radius:50%;margin:0 auto 16px;display:grid;place-items:center;
+    background:linear-gradient(135deg,var(--mint-2),var(--mint));box-shadow:0 12px 26px rgba(127,224,195,.45)}
+  .checkwrap .c{font-size:44px;color:#fff}
+  .center h2{font-family:'Baloo 2',cursive;font-size:25px;font-weight:800;color:var(--ink-strong);margin-bottom:8px}
+  .center p{color:var(--muted);font-size:14px;margin-bottom:18px}
+  .linkbox{display:flex;gap:8px;background:#FCF9FF;border:2px dashed var(--lilac-2);border-radius:var(--r-sm);padding:12px;align-items:center}
+  .linkbox code{flex:1;text-align:left;font-size:12.5px;color:var(--lilac);font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .linkbox .copy{border:0;background:linear-gradient(135deg,var(--pink),var(--lilac));color:#fff;font:inherit;font-weight:700;font-size:13px;padding:9px 13px;border-radius:12px;cursor:pointer}
+
+  .ref{color:var(--muted);font-size:13px;margin-bottom:14px;font-weight:600}
+  .ref b{color:var(--ink-strong)}
+  .steps{display:flex;flex-direction:column;gap:12px}
+  .tstep{display:flex;align-items:center;gap:13px;background:#FCF9FF;border-radius:18px;padding:13px}
+  .tstep .ico{width:36px;height:36px;border-radius:50%;flex:none;display:grid;place-items:center;font-size:16px;font-weight:700;color:#fff;background:var(--subtle)}
+  .tstep.done .ico{background:linear-gradient(135deg,var(--mint),#5FD0AE)}
+  .tstep.active{background:var(--lilac-2)}
+  .tstep.active .ico{background:linear-gradient(135deg,var(--lilac),#9B7FE0)}
+  .tstep.reject .ico{background:linear-gradient(135deg,#FF9BB0,var(--red))}
+  .tstep .tlabel{font-weight:700;font-size:15px;color:var(--ink-strong)}
+  .tstep .ttime{font-size:12.5px;color:var(--muted)}
+  .tstep.pending{opacity:.55}
+  .itemline{display:flex;justify-content:space-between;font-size:14.5px;color:var(--muted);padding:10px 0;border-bottom:2px dotted var(--line);font-weight:600}
+  .itemline:last-child{border-bottom:0}
+  .itemline b{color:var(--ink-strong)}
+  .track-toggle{display:flex;gap:8px;margin-top:8px}
+  .track-toggle button{flex:1;font:inherit;font-size:12px;font-weight:700;padding:10px;border-radius:14px;border:2px solid var(--lilac-2);background:#fff;color:var(--muted);cursor:pointer}
+  .track-toggle button.on{background:var(--lilac-2);color:var(--ink-strong);border-color:var(--lilac)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <section class="screen on" id="welcome">
+    <div class="brand"><div class="dot">🛒</div><h1>Puff</h1></div>
+    <p class="greet" id="greet">Olá 👋</p>
+    <p class="sub">Identifica-te para fazeres o teu pedido. 🍬</p>
+    <div class="card">
+      <label class="field"><span>O teu nome</span><input id="wName" placeholder="ex.: Bruce" type="text"></label>
+      <label class="field"><span>Telemóvel</span><input id="wPhone" placeholder="912 345 678" inputmode="tel"></label>
+    </div>
+    <button class="btn off" id="goOrder" disabled onclick="show('order')">Continuar</button>
+  </section>
+
+  <section class="screen" id="order">
+    <div class="brand"><div class="dot">🛒</div><h1>Puff</h1></div>
+    <p class="sub" style="margin-bottom:14px">Escolhe o modelo e os sabores. Sem preços — combinamos na entrega.</p>
+    <div class="card">
+      <div class="sec-label">Modelo</div>
+      <div class="chips" id="modelChips"></div>
+      <div class="note-line" id="modelNote"></div>
+    </div>
+    <div class="card" id="flavorList"></div>
+    <div class="summary"><span>Total de vapes no pedido</span><b id="sumQty">0</b></div>
+    <button class="btn off" id="sendOrder" disabled onclick="show('done')">Enviar pedido</button>
+  </section>
+
+  <section class="screen" id="done">
+    <div class="brand"><div class="dot">🛒</div><h1>Puff</h1></div>
+    <div class="card center">
+      <div class="checkwrap"><span class="c">✓</span></div>
+      <h2>Pedido recebido! 🎉</h2>
+      <p>Guarda este link para veres o estado — não enviamos mensagens.</p>
+      <div class="linkbox"><code>puff.pt/p/7Kq9-x2M4</code><button class="copy">Copiar</button></div>
+    </div>
+    <button class="btn ghost" onclick="show('track')">Abrir o meu link →</button>
+  </section>
+
+  <section class="screen" id="track">
+    <div class="brand"><div class="dot">🛒</div><h1>Puff</h1></div>
+    <p class="ref">Pedido <b>#7Kq9</b> · Bruce · 912 345 678</p>
+    <div class="card"><div class="steps" id="steps"></div></div>
+    <div class="card">
+      <div class="sec-label">O que pediste</div>
+      <div class="itemline"><span>Cherry Cola</span><b>1</b></div>
+      <div class="itemline"><span>Lemon Lime</span><b>2</b></div>
+    </div>
+    <div class="demo-note" style="margin:14px 0 8px">Pré-visualizar estado (demo):</div>
+    <div class="track-toggle">
+      <button class="on" onclick="setState('analise',this)">Em análise</button>
+      <button onclick="setState('aprovado',this)">Aprovado</button>
+      <button onclick="setState('recusado',this)">Recusado</button>
+    </div>
+  </section>
+</div>
+
+<script>
+  const MODELS = [
+    { id:'kingpro40', name:'KingPro', puffs:'40k', flavors:[
+      { name:'Cherry Cola', stock:1, emo:'🍒' },{ name:'Lemon Lime', stock:8, emo:'🍋' },{ name:'Watermelon Ice', stock:5, emo:'🍉' },
+      { name:'Blueberry', stock:3, emo:'🫐' },{ name:'Strawberry Mango', stock:6, emo:'🍓' },
+    ]},
+  ];
+  let flavors = MODELS[0].flavors;
+  const qty = {};
+  const list = document.getElementById('flavorList');
+  function renderFlavors(model){
+    flavors=model.flavors; for(const k in qty)delete qty[k]; list.innerHTML='';
+    flavors.forEach((f,i)=>{ qty[i]=0;
+      const row=document.createElement('div'); row.className='flavor'; row.id='fl'+i;
+      row.innerHTML=`<div style="display:flex;align-items:center;gap:10px"><span class="emo">${f.emo||'🍭'}</span>
+          <div><span class="fname">${f.name}</span>
+          <span class="fhint">Só há ${f.stock} disponível${f.stock>1?'eis':''}</span></div></div>
+        <div class="stepper">
+          <button class="minus" onclick="step(${i},-1)">−</button>
+          <span class="qty zero" id="q${i}">0</span>
+          <button class="plus" onclick="step(${i},1)">+</button></div>`;
+      list.appendChild(row); });
+    syncSend();
+  }
+  function syncSend(){
+    const t=Object.values(qty).reduce((a,b)=>a+b,0);
+    document.getElementById('sumQty').textContent=t;
+    const s=document.getElementById('sendOrder'); s.disabled=t<1; s.classList.toggle('off',t<1);
+  }
+  function step(i,d){
+    const f=flavors[i]; let v=qty[i]+d; const row=document.getElementById('fl'+i);
+    if(v<0)v=0;
+    if(v>f.stock){v=f.stock;row.classList.add('limit');setTimeout(()=>row.classList.remove('limit'),2200);}
+    else row.classList.remove('limit');
+    qty[i]=v; const q=document.getElementById('q'+i); q.textContent=v; q.classList.toggle('zero',v===0);
+    syncSend();
+  }
+  const modelChips=document.getElementById('modelChips');
+  MODELS.forEach((m,i)=>{ const c=document.createElement('button');
+    c.className='chip'+(i===0?' on':''); c.innerHTML=`${m.name} <span class="puffs">${m.puffs}</span>`;
+    c.onclick=()=>{modelChips.querySelectorAll('.chip').forEach(x=>x.classList.remove('on'));c.classList.add('on');renderFlavors(m);};
+    modelChips.appendChild(c); });
+  document.getElementById('modelNote').textContent = MODELS.length===1?'Único modelo disponível de momento.':'Escolhe o modelo que queres.';
+  renderFlavors(MODELS[0]);
+
+  (function(){const h=new Date().getHours();const g=h<12?'Bom dia':h<20?'Boa tarde':'Boa noite';
+    document.getElementById('greet').innerHTML=g+' 👋';})();
+
+  const wName=document.getElementById('wName'),wPhone=document.getElementById('wPhone'),goOrder=document.getElementById('goOrder');
+  function checkEntry(){const ok=!!(wName.value.trim()&&wPhone.value.trim());goOrder.disabled=!ok;goOrder.classList.toggle('off',!ok);}
+  wName.addEventListener('input',checkEntry); wPhone.addEventListener('input',checkEntry);
+
+  function show(id){
+    document.querySelectorAll('.screen').forEach(s=>s.classList.remove('on'));
+    document.getElementById(id).classList.add('on');
+    window.scrollTo({top:0,behavior:'smooth'});
+  }
+
+  function setState(state,btn){
+    document.querySelectorAll('.track-toggle button').forEach(b=>b.classList.remove('on')); if(btn)btn.classList.add('on');
+    const recebido='<div class="tstep done"><div class="ico">✓</div><div><div class="tlabel">Recebido</div><div class="ttime">Hoje, 21:14</div></div></div>';
+    let mid,end;
+    if(state==='analise'){ mid='<div class="tstep active"><div class="ico">●</div><div><div class="tlabel">Em análise</div><div class="ttime">A aguardar confirmação</div></div></div>'; end='<div class="tstep pending"><div class="ico">3</div><div><div class="tlabel">Resposta</div><div class="ttime">—</div></div></div>'; }
+    else if(state==='aprovado'){ mid='<div class="tstep done"><div class="ico">✓</div><div><div class="tlabel">Em análise</div><div class="ttime">Hoje, 21:20</div></div></div>'; end='<div class="tstep done"><div class="ico">✓</div><div><div class="tlabel">Aprovado 🎉</div><div class="ttime">Combinamos a entrega contigo.</div></div></div>'; }
+    else { mid='<div class="tstep done"><div class="ico">✓</div><div><div class="tlabel">Em análise</div><div class="ttime">Hoje, 21:20</div></div></div>'; end='<div class="tstep reject"><div class="ico">✕</div><div><div class="tlabel">Recusado</div><div class="ttime">Sem stock suficiente de momento.</div></div></div>'; }
+    document.getElementById('steps').innerHTML=recebido+mid+end;
+  }
+  setState('analise');
+</script>
+</body>
+</html>

@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>VapeTrack · Pedidos — Tema D (Aurora)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  :root{
+    --ink:#fff; --muted:rgba(255,255,255,.72); --subtle:rgba(255,255,255,.5);
+    --glass:rgba(255,255,255,.10); --glass-2:rgba(255,255,255,.16); --border:rgba(255,255,255,.20);
+    --amber:#FFE08A; --green:#7CF0B5; --red:#FF9BA6;
+    --r:22px; --r-sm:15px;
+  }
+  body{font-family:'Plus Jakarta Sans',system-ui,sans-serif;color:var(--ink);min-height:100vh;
+    padding:22px 16px 56px;line-height:1.5;position:relative;overflow-x:hidden;
+    background:linear-gradient(160deg,#7C3AED 0%,#DB2777 52%,#F97316 100%)}
+  body::before,body::after{content:"";position:fixed;border-radius:50%;filter:blur(60px);opacity:.55;z-index:0}
+  body::before{width:320px;height:320px;background:#22D3EE;top:-80px;left:-90px}
+  body::after{width:300px;height:300px;background:#FACC15;bottom:-60px;right:-80px}
+  .wrap{max-width:430px;margin:0 auto;position:relative;z-index:1}
+
+  .demo-switch{display:flex;gap:4px;background:var(--glass);backdrop-filter:blur(16px);border:1px solid var(--border);
+    border-radius:999px;padding:5px;margin-bottom:14px}
+  .demo-switch button{flex:1;border:0;background:transparent;color:var(--muted);font:inherit;font-weight:700;font-size:11.5px;
+    padding:9px 4px;border-radius:999px;cursor:pointer}
+  .demo-switch button.on{background:#fff;color:#7C3AED}
+  .demo-note{text-align:center;color:var(--subtle);font-size:12px;margin-bottom:20px;font-weight:500}
+
+  .screen{display:none}
+  .screen.on{display:block;animation:fade .35s ease}
+  @keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+  .brand{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+  .brand .dot{width:38px;height:38px;border-radius:12px;background:var(--glass-2);backdrop-filter:blur(10px);
+    border:1px solid var(--border);display:grid;place-items:center;font-size:18px}
+  .brand h1{font-size:18px;font-weight:800}
+  .greet{font-size:32px;font-weight:800;letter-spacing:-1px;margin-bottom:6px}
+  .sub{color:var(--muted);font-size:14.5px;margin-bottom:20px;font-weight:500}
+
+  .card{background:var(--glass);backdrop-filter:blur(18px);border:1px solid var(--border);border-radius:var(--r);
+    padding:16px;margin-bottom:14px;box-shadow:0 20px 40px rgba(0,0,0,.18)}
+
+  .field{margin-bottom:12px}
+  .field:last-child{margin-bottom:0}
+  .field span{display:block;font-size:12px;color:var(--muted);font-weight:600;margin-bottom:6px}
+  .field input{width:100%;border:1px solid var(--border);background:rgba(255,255,255,.10);color:#fff;font:inherit;font-size:15px;font-weight:500;padding:13px 14px;border-radius:13px}
+  .field input:focus{outline:none;border-color:#fff;background:rgba(255,255,255,.18)}
+  .field input::placeholder{color:var(--subtle)}
+
+  .sec-label{font-size:12px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.6px;margin-bottom:11px}
+  .chips{display:flex;flex-wrap:wrap;gap:9px}
+  .chip{border:1px solid var(--border);background:rgba(255,255,255,.08);color:#fff;font:inherit;font-weight:700;font-size:14px;
+    padding:10px 15px;border-radius:999px;cursor:pointer;display:flex;align-items:center;gap:7px}
+  .chip.on{background:#fff;color:#7C3AED;border-color:#fff}
+  .chip.on .puffs{color:#A855F7}
+  .chip .puffs{color:var(--muted);font-weight:600;font-size:12px}
+  .note-line{color:var(--subtle);font-size:12.5px;margin-top:12px;font-weight:500}
+
+  .flavor{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 14px;border-radius:15px;
+    background:rgba(255,255,255,.07);border:1px solid var(--border);margin-bottom:10px}
+  .flavor:last-child{margin-bottom:0}
+  .flavor .fname{font-weight:700;font-size:15px}
+  .flavor .fhint{display:block;color:var(--amber);font-size:12px;margin-top:3px;font-weight:600;opacity:0;transition:opacity .2s}
+  .flavor.limit .fhint{opacity:1}
+  .stepper{display:flex;align-items:center;gap:6px;background:rgba(255,255,255,.12);border:1px solid var(--border);border-radius:999px;padding:3px}
+  .stepper button{width:34px;height:34px;border:0;background:transparent;color:#fff;font-size:20px;font-weight:700;cursor:pointer;border-radius:50%;display:grid;place-items:center}
+  .stepper button:active{background:rgba(255,255,255,.2)}
+  .stepper .qty{min-width:24px;text-align:center;font-weight:800;font-size:16px;font-variant-numeric:tabular-nums}
+  .stepper .qty.zero{color:var(--subtle)}
+
+  .summary{display:flex;justify-content:space-between;align-items:center;color:var(--muted);font-size:14px;padding:4px 4px 16px;font-weight:600}
+  .summary b{color:#fff;font-size:18px}
+
+  .btn{width:100%;border:0;border-radius:999px;font:inherit;font-weight:800;font-size:16px;padding:17px;cursor:pointer;
+    background:#fff;color:#7C3AED;box-shadow:0 12px 30px rgba(0,0,0,.22)}
+  .btn:active{transform:translateY(1px)}
+  .btn.ghost{background:var(--glass-2);color:#fff;border:1px solid var(--border);box-shadow:none;backdrop-filter:blur(10px)}
+  .btn:disabled,.btn.off{opacity:.45;cursor:not-allowed;box-shadow:none}
+
+  .center{text-align:center;padding:30px 18px}
+  .checkwrap{width:80px;height:80px;border-radius:50%;margin:0 auto 16px;display:grid;place-items:center;background:rgba(124,240,181,.2);border:1px solid var(--green)}
+  .checkwrap .c{font-size:40px;color:var(--green)}
+  .center h2{font-size:23px;font-weight:800;margin-bottom:8px}
+  .center p{color:var(--muted);font-size:14px;margin-bottom:18px;font-weight:500}
+  .linkbox{display:flex;gap:8px;background:rgba(255,255,255,.10);border:1px dashed var(--border);border-radius:var(--r-sm);padding:11px;align-items:center}
+  .linkbox code{flex:1;text-align:left;font-size:12.5px;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .linkbox .copy{border:0;background:#fff;color:#7C3AED;font:inherit;font-weight:700;font-size:13px;padding:8px 13px;border-radius:10px;cursor:pointer}
+
+  .ref{color:var(--subtle);font-size:13px;margin-bottom:14px;font-weight:500}
+  .ref b{color:#fff}
+  .steps{display:flex;flex-direction:column;gap:0}
+  .step{display:flex;gap:13px;align-items:flex-start}
+  .step .ico{width:28px;height:28px;border-radius:50%;flex:none;display:grid;place-items:center;font-size:13px;font-weight:700;
+    background:rgba(255,255,255,.12);border:1px solid var(--border);color:var(--subtle)}
+  .step .line{width:2px;height:24px;background:var(--border);margin:2px 0 2px 13px}
+  .step.done .ico{background:var(--green);border-color:var(--green);color:#0B3B28}
+  .step.active .ico{background:#fff;border-color:#fff;color:#7C3AED;box-shadow:0 0 0 4px rgba(255,255,255,.25)}
+  .step.reject .ico{background:var(--red);border-color:var(--red);color:#5b1118}
+  .step .tlabel{font-weight:700;font-size:15px}
+  .step .ttime{color:var(--subtle);font-size:12.5px}
+  .step.pending .tlabel{color:var(--subtle)}
+  .itemline{display:flex;justify-content:space-between;font-size:14.5px;color:var(--muted);padding:10px 0;border-bottom:1px solid var(--border);font-weight:500}
+  .itemline:last-child{border-bottom:0}
+  .itemline b{color:#fff}
+  .track-toggle{display:flex;gap:8px;margin-top:8px}
+  .track-toggle button{flex:1;font:inherit;font-size:12px;font-weight:700;padding:10px;border-radius:11px;border:1px solid var(--border);background:rgba(255,255,255,.08);color:var(--muted);cursor:pointer}
+  .track-toggle button.on{background:#fff;color:#7C3AED;border-color:#fff}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="demo-switch">
+    <button class="on" data-screen="welcome">1·Entrada</button>
+    <button data-screen="order">2·Pedido</button>
+    <button data-screen="done">3·Confirm.</button>
+    <button data-screen="track">4·Estado</button>
+  </div>
+  <div class="demo-note">Tema D · Aurora — maquete só visual.</div>
+
+  <section class="screen on" id="welcome">
+    <div class="brand"><div class="dot">🛒</div><h1>VapeTrack</h1></div>
+    <p class="greet" id="greet">Olá 👋</p>
+    <p class="sub">Identifica-te para fazeres o teu pedido.</p>
+    <div class="card">
+      <label class="field"><span>O teu nome</span><input id="wName" placeholder="ex.: Bruce" type="text"></label>
+      <label class="field"><span>Telemóvel</span><input id="wPhone" placeholder="912 345 678" inputmode="tel"></label>
+    </div>
+    <button class="btn off" id="goOrder" disabled onclick="show('order')">Continuar</button>
+  </section>
+
+  <section class="screen" id="order">
+    <div class="brand"><div class="dot">🛒</div><h1>VapeTrack</h1></div>
+    <p class="sub" style="margin-bottom:14px">Escolhe o modelo e os sabores. Sem preços — combinamos na entrega.</p>
+    <div class="card">
+      <div class="sec-label">Modelo</div>
+      <div class="chips" id="modelChips"></div>
+      <div class="note-line" id="modelNote"></div>
+    </div>
+    <div class="card" id="flavorList"></div>
+    <div class="summary"><span>Total de vapes no pedido</span><b id="sumQty">0</b></div>
+    <button class="btn" onclick="show('done')">Enviar pedido</button>
+  </section>
+
+  <section class="screen" id="done">
+    <div class="brand"><div class="dot">🛒</div><h1>VapeTrack</h1></div>
+    <div class="card center">
+      <div class="checkwrap"><span class="c">✓</span></div>
+      <h2>Pedido recebido!</h2>
+      <p>Guarda este link para veres o estado — não enviamos mensagens.</p>
+      <div class="linkbox"><code>vapetrack.pt/p/7Kq9-x2M4</code><button class="copy">Copiar</button></div>
+    </div>
+    <button class="btn ghost" onclick="show('track')">Abrir o meu link →</button>
+  </section>
+
+  <section class="screen" id="track">
+    <div class="brand"><div class="dot">🛒</div><h1>VapeTrack</h1></div>
+    <p class="ref">Pedido <b>#7Kq9</b> · Bruce · 912 345 678</p>
+    <div class="card"><div class="steps" id="steps"></div></div>
+    <div class="card">
+      <div class="sec-label">O que pediste</div>
+      <div class="itemline"><span>Cherry Cola</span><b>1</b></div>
+      <div class="itemline"><span>Lemon Lime</span><b>2</b></div>
+    </div>
+    <div class="demo-note" style="margin:14px 0 8px">Pré-visualizar estado (demo):</div>
+    <div class="track-toggle">
+      <button class="on" onclick="setState('analise',this)">Em análise</button>
+      <button onclick="setState('aprovado',this)">Aprovado</button>
+      <button onclick="setState('recusado',this)">Recusado</button>
+    </div>
+  </section>
+</div>
+
+<script>
+  const MODELS = [
+    { id:'kingpro40', name:'KingPro', puffs:'40k', flavors:[
+      { name:'Cherry Cola', stock:1 },{ name:'Lemon Lime', stock:8 },{ name:'Watermelon Ice', stock:5 },
+      { name:'Blueberry', stock:3 },{ name:'Strawberry Mango', stock:6 },
+    ]},
+  ];
+  let flavors = MODELS[0].flavors;
+  const qty = {};
+  const list = document.getElementById('flavorList');
+  function renderFlavors(model){
+    flavors=model.flavors; for(const k in qty)delete qty[k]; list.innerHTML='';
+    flavors.forEach((f,i)=>{ qty[i]=0;
+      const row=document.createElement('div'); row.className='flavor'; row.id='fl'+i;
+      row.innerHTML=`<div><span class="fname">${f.name}</span>
+          <span class="fhint">Só há ${f.stock} disponível${f.stock>1?'eis':''}</span></div>
+        <div class="stepper">
+          <button onclick="step(${i},-1)">−</button>
+          <span class="qty zero" id="q${i}">0</span>
+          <button onclick="step(${i},1)">+</button></div>`;
+      list.appendChild(row); });
+    document.getElementById('sumQty').textContent='0';
+  }
+  function step(i,d){
+    const f=flavors[i]; let v=qty[i]+d; const row=document.getElementById('fl'+i);
+    if(v<0)v=0;
+    if(v>f.stock){v=f.stock;row.classList.add('limit');setTimeout(()=>row.classList.remove('limit'),2200);}
+    else row.classList.remove('limit');
+    qty[i]=v; const q=document.getElementById('q'+i); q.textContent=v; q.classList.toggle('zero',v===0);
+    document.getElementById('sumQty').textContent=Object.values(qty).reduce((a,b)=>a+b,0);
+  }
+  const modelChips=document.getElementById('modelChips');
+  MODELS.forEach((m,i)=>{ const c=document.createElement('button');
+    c.className='chip'+(i===0?' on':''); c.innerHTML=`${m.name} <span class="puffs">${m.puffs}</span>`;
+    c.onclick=()=>{modelChips.querySelectorAll('.chip').forEach(x=>x.classList.remove('on'));c.classList.add('on');renderFlavors(m);};
+    modelChips.appendChild(c); });
+  document.getElementById('modelNote').textContent = MODELS.length===1?'Único modelo disponível de momento.':'Escolhe o modelo que queres.';
+  renderFlavors(MODELS[0]);
+
+  (function(){const h=new Date().getHours();const g=h<12?'Bom dia':h<20?'Boa tarde':'Boa noite';
+    document.getElementById('greet').innerHTML=g+' 👋';})();
+
+  const wName=document.getElementById('wName'),wPhone=document.getElementById('wPhone'),goOrder=document.getElementById('goOrder');
+  function checkEntry(){const ok=!!(wName.value.trim()&&wPhone.value.trim());goOrder.disabled=!ok;goOrder.classList.toggle('off',!ok);}
+  wName.addEventListener('input',checkEntry); wPhone.addEventListener('input',checkEntry);
+
+  function show(id){
+    document.querySelectorAll('.screen').forEach(s=>s.classList.remove('on'));
+    document.getElementById(id).classList.add('on');
+    document.querySelectorAll('.demo-switch button').forEach(b=>b.classList.toggle('on',b.dataset.screen===id));
+    window.scrollTo({top:0,behavior:'smooth'});
+  }
+  document.querySelectorAll('.demo-switch button').forEach(b=>b.onclick=()=>show(b.dataset.screen));
+
+  function setState(state,btn){
+    document.querySelectorAll('.track-toggle button').forEach(b=>b.classList.remove('on')); if(btn)btn.classList.add('on');
+    const recebido='<div class="step done"><div class="ico">✓</div><div><div class="tlabel">Recebido</div><div class="ttime">Hoje, 21:14</div></div></div><div class="step"><div class="line"></div></div>';
+    let mid,end;
+    if(state==='analise'){ mid='<div class="step active"><div class="ico">●</div><div><div class="tlabel">Em análise</div><div class="ttime">A aguardar confirmação</div></div></div>'; end=''; }
+    else if(state==='aprovado'){ mid='<div class="step done"><div class="ico">✓</div><div><div class="tlabel">Em análise</div><div class="ttime">Hoje, 21:20</div></div></div><div class="step"><div class="line"></div></div>'; end='<div class="step done"><div class="ico">✓</div><div><div class="tlabel">Aprovado</div><div class="ttime">Combinamos a entrega contigo.</div></div></div>'; }
+    else { mid='<div class="step done"><div class="ico">✓</div><div><div class="tlabel">Em análise</div><div class="ttime">Hoje, 21:20</div></div></div><div class="step"><div class="line"></div></div>'; end='<div class="step reject"><div class="ico">✕</div><div><div class="tlabel">Recusado</div><div class="ttime">Sem stock suficiente de momento.</div></div></div>'; }
+    document.getElementById('steps').innerHTML=recebido+mid+end;
+  }
+  setState('analise');
+</script>
+</body>
+</html>

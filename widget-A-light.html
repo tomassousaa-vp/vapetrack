@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>VapeTrack · Pedidos — Tema A (Soft Light)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  :root{
+    --bg:#F4F6F8; --card:#FFFFFF; --ink:#0F172A; --muted:#64748B; --subtle:#94A3B8;
+    --line:#E7EBEF; --line-2:#DDE3E9;
+    --accent:#0D9488; --accent-2:#CCFBF1; --accent-ink:#0B3B38;
+    --amber:#B45309; --rose:#E11D48; --ok:#0D9488;
+    --r:18px; --r-sm:12px; --pill:999px;
+  }
+  body{font-family:'Inter',system-ui,sans-serif;color:var(--ink);background:var(--bg);
+    min-height:100vh;padding:22px 16px 56px;line-height:1.5}
+  .wrap{max-width:420px;margin:0 auto}
+
+  .demo-switch{display:flex;gap:2px;border-bottom:1px solid var(--line);margin-bottom:22px}
+  .demo-switch button{flex:1;border:0;background:transparent;color:var(--subtle);font:inherit;
+    font-weight:600;font-size:12.5px;padding:11px 4px;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px}
+  .demo-switch button.on{color:var(--accent);border-bottom-color:var(--accent)}
+  .demo-note{text-align:center;color:var(--subtle);font-size:12px;margin-bottom:20px}
+
+  .screen{display:none}
+  .screen.on{display:block;animation:fade .3s ease}
+  @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+  .brand{display:flex;align-items:center;gap:10px;margin-bottom:18px}
+  .brand .dot{width:32px;height:32px;border-radius:10px;background:var(--accent);color:#fff;
+    display:grid;place-items:center;font-size:16px}
+  .brand h1{font-size:16px;font-weight:700;letter-spacing:-.2px}
+
+  .greet{font-size:30px;font-weight:800;letter-spacing:-1px;margin-bottom:6px}
+  .sub{color:var(--muted);font-size:14.5px;margin-bottom:22px}
+
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);
+    box-shadow:0 1px 2px rgba(15,23,42,.04);padding:6px 16px;margin-bottom:14px}
+  .card.pad{padding:18px 16px}
+
+  /* underline inputs */
+  .field{padding:14px 0;border-bottom:1px solid var(--line)}
+  .field:last-child{border-bottom:0}
+  .field span{display:block;font-size:12px;color:var(--muted);font-weight:600;margin-bottom:2px;text-transform:uppercase;letter-spacing:.4px}
+  .field input{width:100%;border:0;background:transparent;color:var(--ink);font:inherit;font-size:16px;font-weight:500;padding:2px 0}
+  .field input:focus{outline:none}
+  .field input::placeholder{color:var(--subtle);font-weight:400}
+
+  .sec-label{font-size:12px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin:14px 0 12px;padding:0 0}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;padding-bottom:14px}
+  .chip{border:1px solid var(--line-2);background:#fff;color:var(--ink);font:inherit;font-weight:600;font-size:14px;
+    padding:9px 14px;border-radius:var(--pill);cursor:pointer;display:flex;align-items:center;gap:7px}
+  .chip.on{border-color:var(--accent);background:var(--accent-2);color:var(--accent-ink)}
+  .chip .puffs{color:var(--muted);font-weight:500;font-size:12px}
+  .note-line{color:var(--subtle);font-size:12.5px;padding-bottom:14px}
+
+  /* flavor list with hairline dividers */
+  .flavor{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:15px 0;border-bottom:1px solid var(--line)}
+  .flavor:last-child{border-bottom:0}
+  .flavor .fname{font-weight:600;font-size:15.5px}
+  .flavor .fhint{display:block;color:var(--amber);font-size:12px;margin-top:2px;opacity:0;transition:opacity .2s}
+  .flavor.limit .fhint{opacity:1}
+  .stepper{display:flex;align-items:center;gap:10px}
+  .stepper button{width:34px;height:34px;border:1px solid var(--line-2);background:#fff;color:var(--ink);
+    font-size:19px;font-weight:600;cursor:pointer;border-radius:var(--pill);display:grid;place-items:center}
+  .stepper button:active{background:var(--bg)}
+  .stepper .qty{min-width:18px;text-align:center;font-weight:700;font-size:16px;font-variant-numeric:tabular-nums}
+  .stepper .qty.zero{color:var(--subtle)}
+
+  .summary{display:flex;justify-content:space-between;align-items:center;color:var(--muted);font-size:14px;padding:4px 2px 16px}
+  .summary b{color:var(--ink);font-size:16px}
+
+  .btn{width:100%;border:0;border-radius:var(--pill);font:inherit;font-weight:700;font-size:16px;padding:16px;cursor:pointer;
+    background:var(--accent);color:#fff}
+  .btn:active{transform:translateY(1px)}
+  .btn.ghost{background:#fff;color:var(--ink);border:1px solid var(--line-2)}
+  .btn:disabled,.btn.off{opacity:.4;cursor:not-allowed}
+
+  /* confirmation */
+  .center{text-align:center;padding:32px 18px}
+  .checkwrap{width:74px;height:74px;border-radius:50%;margin:0 auto 16px;display:grid;place-items:center;background:var(--accent-2)}
+  .checkwrap .c{font-size:36px;color:var(--accent)}
+  .center h2{font-size:21px;font-weight:800;margin-bottom:8px;letter-spacing:-.4px}
+  .center p{color:var(--muted);font-size:14px;margin-bottom:18px}
+  .linkbox{display:flex;gap:8px;background:var(--bg);border:1px solid var(--line);border-radius:var(--r-sm);padding:10px;align-items:center}
+  .linkbox code{flex:1;text-align:left;font-size:12.5px;color:var(--accent);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .linkbox .copy{border:0;background:var(--accent);color:#fff;font:inherit;font-weight:600;font-size:13px;padding:8px 12px;border-radius:9px;cursor:pointer}
+
+  /* tracking — horizontal dots */
+  .ref{color:var(--subtle);font-size:13px;margin-bottom:16px}
+  .ref b{color:var(--ink)}
+  .htrack{display:flex;align-items:flex-start;justify-content:space-between;padding:8px 4px 18px;position:relative}
+  .hstep{flex:1;text-align:center;position:relative;z-index:1}
+  .hstep .hdot{width:30px;height:30px;border-radius:50%;margin:0 auto 8px;display:grid;place-items:center;
+    background:#fff;border:2px solid var(--line-2);color:var(--subtle);font-size:13px;font-weight:700}
+  .hstep .hl{font-size:12px;font-weight:600;color:var(--muted)}
+  .hstep.done .hdot{background:var(--accent);border-color:var(--accent);color:#fff}
+  .hstep.done .hl{color:var(--ink)}
+  .hstep.active .hdot{background:#fff;border-color:var(--accent);color:var(--accent);box-shadow:0 0 0 4px var(--accent-2)}
+  .hstep.active .hl{color:var(--accent)}
+  .hstep.reject .hdot{background:var(--rose);border-color:var(--rose);color:#fff}
+  .hstep.reject .hl{color:var(--rose)}
+  .hbar{position:absolute;top:22px;left:16%;right:16%;height:2px;background:var(--line-2);z-index:0}
+  .itemline{display:flex;justify-content:space-between;font-size:14.5px;color:var(--muted);padding:12px 0;border-bottom:1px solid var(--line)}
+  .itemline:last-child{border-bottom:0}
+  .itemline b{color:var(--ink)}
+  .track-toggle{display:flex;gap:8px;margin-top:8px}
+  .track-toggle button{flex:1;font:inherit;font-size:12.5px;font-weight:600;padding:9px;border-radius:9px;border:1px solid var(--line-2);background:#fff;color:var(--muted);cursor:pointer}
+  .track-toggle button.on{border-color:var(--accent);color:var(--accent);background:var(--accent-2)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="demo-switch">
+    <button class="on" data-screen="welcome">1 · Entrada</button>
+    <button data-screen="order">2 · Pedido</button>
+    <button data-screen="done">3 · Confirm.</button>
+    <button data-screen="track">4 · Estado</button>
+  </div>
+  <div class="demo-note">Tema A · Soft Light — maquete só visual.</div>
+
+  <!-- ENTRADA -->
+  <section class="screen on" id="welcome">
+    <div class="brand"><div class="dot">🛒</div><h1>VapeTrack</h1></div>
+    <p class="greet" id="greet">Olá 👋</p>
+    <p class="sub">Identifica-te para fazeres o teu pedido.</p>
+    <div class="card">
+      <label class="field"><span>O teu nome</span><input id="wName" placeholder="ex.: Bruce" type="text"></label>
+      <label class="field"><span>Telemóvel</span><input id="wPhone" placeholder="912 345 678" inputmode="tel"></label>
+    </div>
+    <button class="btn off" id="goOrder" disabled onclick="show('order')">Continuar</button>
+  </section>
+
+  <!-- PEDIDO -->
+  <section class="screen" id="order">
+    <div class="brand"><div class="dot">🛒</div><h1>VapeTrack</h1></div>
+    <p class="sub" style="margin-bottom:6px">Escolhe o modelo e os sabores. Sem preços — combinamos na entrega.</p>
+    <div class="card pad" style="padding-top:6px">
+      <div class="sec-label">Modelo</div>
+      <div class="chips" id="modelChips"></div>
+      <div class="note-line" id="modelNote"></div>
+    </div>
+    <div class="card" id="flavorList"></div>
+    <div class="summary"><span>Total de vapes no pedido</span><b id="sumQty">0</b></div>
+    <button class="btn" onclick="show('done')">Enviar pedido</button>
+  </section>
+
+  <!-- CONFIRMAÇÃO -->
+  <section class="screen" id="done">
+    <div class="brand"><div class="dot">🛒</div><h1>VapeTrack</h1></div>
+    <div class="card center">
+      <div class="checkwrap"><span class="c">✓</span></div>
+      <h2>Pedido recebido!</h2>
+      <p>Guarda este link para veres o estado — não enviamos mensagens.</p>
+      <div class="linkbox"><code>vapetrack.pt/p/7Kq9-x2M4</code><button class="copy">Copiar</button></div>
+    </div>
+    <button class="btn ghost" onclick="show('track')">Abrir o meu link →</button>
+  </section>
+
+  <!-- ESTADO -->
+  <section class="screen" id="track">
+    <div class="brand"><div class="dot">🛒</div><h1>VapeTrack</h1></div>
+    <p class="ref">Pedido <b>#7Kq9</b> · Bruce · 912 345 678</p>
+    <div class="card pad"><div class="htrack" id="steps"></div></div>
+    <div class="card pad">
+      <div class="sec-label" style="margin-top:0">O que pediste</div>
+      <div class="itemline"><span>Cherry Cola</span><b>1</b></div>
+      <div class="itemline"><span>Lemon Lime</span><b>2</b></div>
+    </div>
+    <div class="demo-note" style="margin:14px 0 8px">Pré-visualizar estado (demo):</div>
+    <div class="track-toggle">
+      <button class="on" onclick="setState('analise',this)">Em análise</button>
+      <button onclick="setState('aprovado',this)">Aprovado</button>
+      <button onclick="setState('recusado',this)">Recusado</button>
+    </div>
+  </section>
+</div>
+
+<script>
+  const MODELS = [
+    { id:'kingpro40', name:'KingPro', puffs:'40k', flavors:[
+      { name:'Cherry Cola', stock:1 },{ name:'Lemon Lime', stock:8 },{ name:'Watermelon Ice', stock:5 },
+      { name:'Blueberry', stock:3 },{ name:'Strawberry Mango', stock:6 },
+    ]},
+  ];
+  let flavors = MODELS[0].flavors;
+  const qty = {};
+  const list = document.getElementById('flavorList');
+  function renderFlavors(model){
+    flavors=model.flavors; for(const k in qty)delete qty[k]; list.innerHTML='';
+    flavors.forEach((f,i)=>{ qty[i]=0;
+      const row=document.createElement('div'); row.className='flavor'; row.id='fl'+i;
+      row.innerHTML=`<div><span class="fname">${f.name}</span>
+          <span class="fhint">Só há ${f.stock} disponível${f.stock>1?'eis':''}</span></div>
+        <div class="stepper">
+          <button onclick="step(${i},-1)">−</button>
+          <span class="qty zero" id="q${i}">0</span>
+          <button onclick="step(${i},1)">+</button></div>`;
+      list.appendChild(row); });
+    document.getElementById('sumQty').textContent='0';
+  }
+  function step(i,d){
+    const f=flavors[i]; let v=qty[i]+d; const row=document.getElementById('fl'+i);
+    if(v<0)v=0;
+    if(v>f.stock){v=f.stock;row.classList.add('limit');setTimeout(()=>row.classList.remove('limit'),2200);}
+    else row.classList.remove('limit');
+    qty[i]=v; const q=document.getElementById('q'+i); q.textContent=v; q.classList.toggle('zero',v===0);
+    document.getElementById('sumQty').textContent=Object.values(qty).reduce((a,b)=>a+b,0);
+  }
+  const modelChips=document.getElementById('modelChips');
+  MODELS.forEach((m,i)=>{ const c=document.createElement('button');
+    c.className='chip'+(i===0?' on':''); c.innerHTML=`${m.name} <span class="puffs">${m.puffs}</span>`;
+    c.onclick=()=>{modelChips.querySelectorAll('.chip').forEach(x=>x.classList.remove('on'));c.classList.add('on');renderFlavors(m);};
+    modelChips.appendChild(c); });
+  document.getElementById('modelNote').textContent = MODELS.length===1?'Único modelo disponível de momento.':'Escolhe o modelo que queres.';
+  renderFlavors(MODELS[0]);
+
+  (function(){const h=new Date().getHours();const g=h<12?'Bom dia':h<20?'Boa tarde':'Boa noite';
+    document.getElementById('greet').innerHTML=g+' 👋';})();
+
+  const wName=document.getElementById('wName'),wPhone=document.getElementById('wPhone'),goOrder=document.getElementById('goOrder');
+  function checkEntry(){const ok=!!(wName.value.trim()&&wPhone.value.trim());goOrder.disabled=!ok;goOrder.classList.toggle('off',!ok);}
+  wName.addEventListener('input',checkEntry); wPhone.addEventListener('input',checkEntry);
+
+  function show(id){
+    document.querySelectorAll('.screen').forEach(s=>s.classList.remove('on'));
+    document.getElementById(id).classList.add('on');
+    document.querySelectorAll('.demo-switch button').forEach(b=>b.classList.toggle('on',b.dataset.screen===id));
+    window.scrollTo({top:0,behavior:'smooth'});
+  }
+  document.querySelectorAll('.demo-switch button').forEach(b=>b.onclick=()=>show(b.dataset.screen));
+
+  function setState(state,btn){
+    document.querySelectorAll('.track-toggle button').forEach(b=>b.classList.remove('on')); if(btn)btn.classList.add('on');
+    const last = state==='aprovado'?'<div class="hstep done"><div class="hdot">✓</div><div class="hl">Aprovado</div></div>'
+      : state==='recusado'?'<div class="hstep reject"><div class="hdot">✕</div><div class="hl">Recusado</div></div>'
+      : '<div class="hstep"><div class="hdot">3</div><div class="hl">Resposta</div></div>';
+    const mid = state==='analise'?'<div class="hstep active"><div class="hdot">●</div><div class="hl">Em análise</div></div>'
+      : '<div class="hstep done"><div class="hdot">✓</div><div class="hl">Em análise</div></div>';
+    document.getElementById('steps').innerHTML =
+      '<div class="hbar"></div><div class="hstep done"><div class="hdot">✓</div><div class="hl">Recebido</div></div>'+mid+last;
+  }
+  setState('analise');
+</script>
+</body>
+</html>

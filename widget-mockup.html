@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>VapeTrack · Pedidos (maquete)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  :root{
+    --bg-void:#04060F; --bg:#07091A;
+    --glass-1:rgba(255,255,255,.025); --glass-2:rgba(255,255,255,.04); --glass-3:rgba(255,255,255,.06);
+    --border:rgba(255,255,255,.07); --border-strong:rgba(255,255,255,.12);
+    --violet:#A78BFA; --violet-hover:#8B5CF6; --violet-glow:rgba(167,139,250,.32);
+    --emerald:#6EE7B7; --amber:#FCD34D; --rose:#FCA5A5; --sky:#93C5FD;
+    --text:#F8FAFC; --text-muted:#9CA3AF; --text-subtle:#6B7280;
+    --radius:20px; --radius-sm:14px; --radius-pill:999px;
+    --shadow:0 1px 0 rgba(255,255,255,.06) inset,0 0 0 1px rgba(255,255,255,.04),0 22px 50px rgba(0,0,0,.45),0 8px 20px rgba(0,0,0,.25);
+  }
+  body{
+    font-family:'IBM Plex Sans',system-ui,sans-serif; color:var(--text);
+    background:
+      radial-gradient(1200px 600px at 50% -10%, rgba(167,139,250,.12), transparent 60%),
+      radial-gradient(900px 500px at 100% 10%, rgba(147,197,253,.08), transparent 55%),
+      var(--bg-void);
+    min-height:100vh; padding:24px 14px 60px; line-height:1.45;
+  }
+  .demo-switch{max-width:440px;margin:0 auto 18px;display:flex;gap:6px;background:var(--glass-2);
+    border:1px solid var(--border);border-radius:var(--radius-pill);padding:5px}
+  .demo-switch button{flex:1;border:0;background:transparent;color:var(--text-muted);
+    font:inherit;font-weight:600;font-size:12px;padding:9px 4px;border-radius:var(--radius-pill);cursor:pointer;white-space:nowrap}
+  .demo-switch button.on{background:var(--violet);color:#1a1030;box-shadow:0 6px 16px var(--violet-glow)}
+  .demo-note{max-width:440px;margin:0 auto 22px;text-align:center;color:var(--text-subtle);font-size:12px}
+
+  .screen{max-width:440px;margin:0 auto;display:none}
+  .screen.on{display:block;animation:fade .35s ease}
+  @keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+  .brand{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+  .brand .dot{width:34px;height:34px;border-radius:11px;background:linear-gradient(135deg,var(--violet),#6D28D9);
+    display:grid;place-items:center;font-size:18px;box-shadow:0 8px 20px var(--violet-glow)}
+  .brand h1{font-size:19px;font-weight:700;letter-spacing:.2px}
+  .sub{color:var(--text-muted);font-size:14px;margin-bottom:20px}
+
+  .card{background:var(--glass-2);border:1px solid var(--border);border-radius:var(--radius);
+    box-shadow:var(--shadow);padding:16px;margin-bottom:12px}
+
+  .flavor{display:flex;align-items:center;justify-content:space-between;gap:12px;
+    padding:14px 14px;border:1px solid var(--border);border-radius:var(--radius-sm);
+    background:var(--glass-1);margin-bottom:10px}
+  .flavor:last-child{margin-bottom:0}
+  .flavor .fname{font-weight:600;font-size:15px}
+  .flavor .fhint{display:block;color:var(--amber);font-size:12px;margin-top:3px;min-height:0;opacity:0;transition:opacity .2s}
+  .flavor.limit .fhint{opacity:1}
+  .stepper{display:flex;align-items:center;gap:0;background:var(--glass-3);border:1px solid var(--border);
+    border-radius:var(--radius-pill);overflow:hidden;flex:none}
+  .stepper button{width:38px;height:38px;border:0;background:transparent;color:var(--text);
+    font-size:20px;font-weight:600;cursor:pointer;display:grid;place-items:center}
+  .stepper button:active{background:var(--glass-3)}
+  .stepper .qty{min-width:34px;text-align:center;font-weight:700;font-size:15px;
+    font-variant-numeric:tabular-nums}
+  .stepper .qty.zero{color:var(--text-subtle)}
+
+  label.field{display:block;margin-bottom:12px}
+  label.field span{display:block;font-size:13px;color:var(--text-muted);margin-bottom:6px;font-weight:500}
+  input.inp{width:100%;background:var(--glass-1);border:1px solid var(--border);border-radius:var(--radius-sm);
+    color:var(--text);font:inherit;font-size:15px;padding:13px 14px}
+  input.inp:focus{outline:none;border-color:var(--violet);box-shadow:0 0 0 3px var(--violet-glow)}
+  input.inp::placeholder{color:var(--text-subtle)}
+
+  .btn{width:100%;border:0;border-radius:var(--radius-pill);font:inherit;font-weight:700;font-size:16px;
+    padding:16px;cursor:pointer;background:var(--violet);color:#1a1030;box-shadow:0 10px 26px var(--violet-glow);margin-top:4px}
+  .btn:active{transform:translateY(1px)}
+  .btn.ghost{background:var(--glass-2);color:var(--text);border:1px solid var(--border-strong);box-shadow:none}
+
+  .summary{display:flex;justify-content:space-between;align-items:center;color:var(--text-muted);
+    font-size:14px;padding:4px 2px 14px}
+  .summary b{color:var(--text);font-size:15px}
+
+  /* confirmation */
+  .center{text-align:center;padding:34px 20px}
+  .checkwrap{width:84px;height:84px;border-radius:50%;margin:0 auto 18px;display:grid;place-items:center;
+    background:rgba(110,231,183,.12);border:1px solid rgba(110,231,183,.4)}
+  .checkwrap .c{font-size:42px;color:var(--emerald)}
+  .center h2{font-size:22px;font-weight:700;margin-bottom:8px}
+  .center p{color:var(--text-muted);font-size:14px;margin-bottom:20px}
+  .linkbox{display:flex;gap:8px;background:var(--glass-1);border:1px dashed var(--border-strong);
+    border-radius:var(--radius-sm);padding:12px;align-items:center}
+  .linkbox code{flex:1;text-align:left;font-size:12.5px;color:var(--sky);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .linkbox .copy{border:0;background:var(--violet);color:#1a1030;font:inherit;font-weight:600;font-size:13px;
+    padding:8px 12px;border-radius:10px;cursor:pointer;flex:none}
+
+  /* tracking */
+  .ref{color:var(--text-subtle);font-size:13px;margin-bottom:4px}
+  .steps{margin:18px 0 6px}
+  .step{display:flex;gap:12px;align-items:flex-start;padding:0 2px}
+  .step .ico{width:28px;height:28px;border-radius:50%;flex:none;display:grid;place-items:center;
+    font-size:14px;background:var(--glass-3);border:1px solid var(--border);color:var(--text-subtle)}
+  .step .line{width:2px;height:26px;background:var(--border);margin:2px 0 2px 13px}
+  .step.done .ico{background:rgba(110,231,183,.15);border-color:rgba(110,231,183,.5);color:var(--emerald)}
+  .step.active .ico{background:var(--violet);border-color:var(--violet);color:#1a1030;box-shadow:0 0 0 4px var(--violet-glow)}
+  .step.reject .ico{background:rgba(252,165,165,.15);border-color:rgba(252,165,165,.5);color:var(--rose)}
+  .step .tlabel{font-weight:600;font-size:15px}
+  .step .ttime{color:var(--text-subtle);font-size:12.5px}
+  .step.pending .tlabel{color:var(--text-subtle)}
+  .itemline{display:flex;justify-content:space-between;font-size:14px;color:var(--text-muted);padding:5px 2px}
+  .itemline b{color:var(--text)}
+  .track-toggle{display:flex;gap:8px;margin-top:8px}
+  .track-toggle button{flex:1;font:inherit;font-size:12.5px;font-weight:600;padding:9px;border-radius:10px;
+    border:1px solid var(--border);background:var(--glass-2);color:var(--text-muted);cursor:pointer}
+  .track-toggle button.on{border-color:var(--violet);color:var(--text)}
+
+  /* entry / model picker */
+  .greet{font-size:26px;font-weight:700;margin-bottom:6px}
+  .sec-label{font-size:13px;color:var(--text-muted);font-weight:500;margin-bottom:10px}
+  .chips{display:flex;flex-wrap:wrap;gap:8px}
+  .chip{border:1px solid var(--border);background:var(--glass-1);color:var(--text);
+    font:inherit;font-weight:600;font-size:14px;padding:11px 14px;border-radius:var(--radius-pill);cursor:pointer;
+    display:flex;align-items:center;gap:8px}
+  .chip.on{border-color:var(--violet);background:var(--violet-glow);box-shadow:0 0 0 3px var(--violet-glow)}
+  .chip .puffs{color:var(--text-muted);font-weight:500;font-size:12.5px}
+  .note-line{color:var(--text-subtle);font-size:12.5px;margin-top:10px}
+  .btn:disabled,.btn.off{opacity:.45;cursor:not-allowed;box-shadow:none}
+  .btn:disabled:active,.btn.off:active{transform:none}
+</style>
+</head>
+<body>
+
+<div class="demo-switch">
+  <button class="on" data-screen="welcome">1 · Entrada</button>
+  <button data-screen="order">2 · Pedido</button>
+  <button data-screen="done">3 · Confirm.</button>
+  <button data-screen="track">4 · Estado</button>
+</div>
+<div class="demo-note">Maquete — só visual, sem ligação real. Toca nos botões acima para ver os 4 ecrãs.</div>
+
+<!-- ░░░ ECRÃ 1 — ENTRADA ░░░ -->
+<section class="screen on" id="welcome">
+  <div class="brand"><div class="dot">🛒</div><h1>VapeTrack · Pedidos</h1></div>
+  <p class="greet" id="greet">Olá 👋</p>
+  <p class="sub">Identifica-te para fazeres o teu pedido.</p>
+
+  <div class="card">
+    <label class="field"><span>O teu nome</span>
+      <input class="inp" id="wName" placeholder="ex.: Bruce" type="text"></label>
+    <label class="field" style="margin-bottom:0"><span>Telemóvel</span>
+      <input class="inp" id="wPhone" placeholder="ex.: 912 345 678" inputmode="tel"></label>
+  </div>
+
+  <button class="btn off" id="goOrder" disabled onclick="show('order')">Continuar →</button>
+</section>
+
+<!-- ░░░ ECRÃ 2 — PEDIDO ░░░ -->
+<section class="screen" id="order">
+  <div class="brand"><div class="dot">🛒</div><h1>VapeTrack · Pedidos</h1></div>
+  <p class="sub">Escolhe o modelo e os sabores. Sem preços — combinamos na entrega.</p>
+
+  <div class="card">
+    <div class="sec-label">Modelo</div>
+    <div class="chips" id="modelChips"></div>
+    <div class="note-line" id="modelNote"></div>
+  </div>
+
+  <div class="card" id="flavorList"><!-- flavors injected --></div>
+
+  <div class="summary"><span>Total de vapes no pedido</span><b id="sumQty">0</b></div>
+  <button class="btn" onclick="show('done')">Enviar pedido</button>
+</section>
+
+<!-- ░░░ ECRÃ 2 — CONFIRMAÇÃO ░░░ -->
+<section class="screen" id="done">
+  <div class="brand"><div class="dot">🛒</div><h1>VapeTrack · Pedidos</h1></div>
+  <div class="card center">
+    <div class="checkwrap"><span class="c">✓</span></div>
+    <h2>Pedido recebido!</h2>
+    <p>Vamos analisar o teu pedido. Guarda este link para veres o estado — não enviamos mensagens.</p>
+    <div class="linkbox">
+      <code>vapetrack.app/p/7Kq9-x2M4</code>
+      <button class="copy">Copiar</button>
+    </div>
+  </div>
+  <button class="btn ghost" onclick="show('track')">Abrir o meu link →</button>
+</section>
+
+<!-- ░░░ ECRÃ 3 — ACOMPANHAR ░░░ -->
+<section class="screen" id="track">
+  <div class="brand"><div class="dot">🛒</div><h1>VapeTrack · Pedidos</h1></div>
+  <p class="ref">Pedido <b style="color:var(--text)">#7Kq9</b> · Bruce · 912 345 678</p>
+
+  <div class="card">
+    <div class="steps" id="steps"></div>
+  </div>
+
+  <div class="card">
+    <div style="font-size:13px;color:var(--text-muted);font-weight:500;margin-bottom:6px">O que pediste</div>
+    <div class="itemline"><span>Cherry Cola</span><b>1</b></div>
+    <div class="itemline"><span>Lemon Lime</span><b>2</b></div>
+  </div>
+
+  <div class="demo-note" style="margin:14px auto 6px">Pré-visualizar estado (demo):</div>
+  <div class="track-toggle">
+    <button class="on" onclick="setState('analise',this)">Em análise</button>
+    <button onclick="setState('aprovado',this)">Aprovado</button>
+    <button onclick="setState('recusado',this)">Recusado</button>
+  </div>
+</section>
+
+<script>
+  // ── Cada modelo tem os SEUS sabores. Stock por sabor escondido (NÃO mostrado).
+  //    Cherry Cola só tem 1 → demonstra o limite "só há X".
+  const MODELS = [
+    { id:'kingpro40', name:'KingPro', puffs:'40k', flavors:[
+      { name:'Cherry Cola',      stock:1 },
+      { name:'Lemon Lime',       stock:8 },
+      { name:'Watermelon Ice',   stock:5 },
+      { name:'Blueberry',        stock:3 },
+      { name:'Strawberry Mango', stock:6 },
+    ]},
+    // Exemplo de 2º modelo (comentado) — descomenta para ver os chips a filtrar a lista:
+    // { id:'aura20', name:'Aura', puffs:'20k', flavors:[
+    //   { name:'Mango Ice', stock:4 }, { name:'Mint', stock:2 },
+    // ]},
+  ];
+  let flavors = MODELS[0].flavors;     // sabores do modelo ativo
+  const qty = {};
+  const list = document.getElementById('flavorList');
+
+  // Render da lista de sabores do modelo recebido
+  function renderFlavors(model){
+    flavors = model.flavors;
+    for(const k in qty) delete qty[k];
+    list.innerHTML='';
+    flavors.forEach((f,i)=>{
+      qty[i]=0;
+      const row=document.createElement('div');
+      row.className='flavor'; row.id='fl'+i;
+      row.innerHTML=`<div><span class="fname">${f.name}</span>
+          <span class="fhint">Só há ${f.stock} disponível${f.stock>1?'eis':''}</span></div>
+        <div class="stepper">
+          <button aria-label="menos" onclick="step(${i},-1)">−</button>
+          <span class="qty zero" id="q${i}">0</span>
+          <button aria-label="mais" onclick="step(${i},1)">+</button>
+        </div>`;
+      list.appendChild(row);
+    });
+    document.getElementById('sumQty').textContent='0';
+  }
+
+  function step(i,d){
+    const f=flavors[i]; let v=qty[i]+d;
+    const row=document.getElementById('fl'+i);
+    if(v<0)v=0;
+    if(v>f.stock){ v=f.stock; row.classList.add('limit'); setTimeout(()=>row.classList.remove('limit'),2200); }
+    else { row.classList.remove('limit'); }
+    qty[i]=v;
+    const q=document.getElementById('q'+i);
+    q.textContent=v; q.classList.toggle('zero',v===0);
+    document.getElementById('sumQty').textContent=Object.values(qty).reduce((a,b)=>a+b,0);
+  }
+
+  // ── Chips de modelo (cada um filtra os seus sabores)
+  const modelChips=document.getElementById('modelChips');
+  MODELS.forEach((m,i)=>{
+    const c=document.createElement('button');
+    c.className='chip'+(i===0?' on':'');
+    c.innerHTML=`${m.name} <span class="puffs">${m.puffs}</span>`;
+    c.onclick=()=>{
+      modelChips.querySelectorAll('.chip').forEach(x=>x.classList.remove('on'));
+      c.classList.add('on');
+      renderFlavors(m);
+    };
+    modelChips.appendChild(c);
+  });
+  document.getElementById('modelNote').textContent =
+    MODELS.length===1 ? 'Único modelo disponível de momento.' : 'Escolhe o modelo que queres.';
+  renderFlavors(MODELS[0]);
+
+  // ── Saudação dinâmica (bom dia / boa tarde / boa noite)
+  (function(){
+    const h=new Date().getHours();
+    const g = h<12 ? 'Bom dia' : h<20 ? 'Boa tarde' : 'Boa noite';
+    document.getElementById('greet').innerHTML = g+' 👋';
+  })();
+
+  // ── "Continuar" só fica ativo com nome E telemóvel preenchidos
+  const wName=document.getElementById('wName'), wPhone=document.getElementById('wPhone'),
+        goOrder=document.getElementById('goOrder');
+  function checkEntry(){
+    const ok = !!(wName.value.trim() && wPhone.value.trim());
+    goOrder.disabled=!ok; goOrder.classList.toggle('off',!ok);
+  }
+  wName.addEventListener('input',checkEntry);
+  wPhone.addEventListener('input',checkEntry);
+
+  function show(id){
+    document.querySelectorAll('.screen').forEach(s=>s.classList.remove('on'));
+    document.getElementById(id).classList.add('on');
+    document.querySelectorAll('.demo-switch button').forEach(b=>b.classList.toggle('on',b.dataset.screen===id));
+    window.scrollTo({top:0,behavior:'smooth'});
+  }
+  document.querySelectorAll('.demo-switch button').forEach(b=>{
+    b.onclick=()=>show(b.dataset.screen);
+  });
+
+  // ── Tracking states
+  function setState(state,btn){
+    document.querySelectorAll('.track-toggle button').forEach(b=>b.classList.remove('on'));
+    if(btn)btn.classList.add('on');
+    const steps=document.getElementById('steps');
+    const recebido=`<div class="step done"><div class="ico">✓</div>
+        <div><div class="tlabel">Recebido</div><div class="ttime">Hoje, 21:14</div></div></div>
+      <div class="step"><div class="line"></div></div>`;
+    let middle,end;
+    if(state==='analise'){
+      middle=`<div class="step active"><div class="ico">●</div>
+        <div><div class="tlabel">Em análise</div><div class="ttime">A aguardar confirmação</div></div></div>`;
+      end='';
+    } else if(state==='aprovado'){
+      middle=`<div class="step done"><div class="ico">✓</div>
+        <div><div class="tlabel">Em análise</div><div class="ttime">Hoje, 21:20</div></div></div>
+        <div class="step"><div class="line"></div></div>`;
+      end=`<div class="step done"><div class="ico">✓</div>
+        <div><div class="tlabel" style="color:var(--emerald)">Aprovado</div>
+        <div class="ttime">Combinamos a entrega contigo.</div></div></div>`;
+    } else {
+      middle=`<div class="step done"><div class="ico">✓</div>
+        <div><div class="tlabel">Em análise</div><div class="ttime">Hoje, 21:20</div></div></div>
+        <div class="step"><div class="line"></div></div>`;
+      end=`<div class="step reject"><div class="ico">✕</div>
+        <div><div class="tlabel" style="color:var(--rose)">Recusado</div>
+        <div class="ttime">Sem stock suficiente de momento.</div></div></div>`;
+    }
+    steps.innerHTML=recebido+middle+end;
+  }
+  setState('analise');
+</script>
+</body>
+</html>

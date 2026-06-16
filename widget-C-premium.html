@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>VapeTrack · Pedidos — Tema C (Midnight Premium)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  :root{
+    --bg:#0C0D11; --bg-2:#101218; --card:#15171E; --card-2:#1B1E27;
+    --ink:#F4F1EA; --muted:#9C988C; --subtle:#6E6A5F;
+    --line:rgba(255,255,255,.07); --line-2:rgba(255,255,255,.13);
+    --gold:#D9B45B; --gold-soft:rgba(217,180,91,.14); --gold-line:rgba(217,180,91,.4);
+    --green:#7DD8A6; --red:#E88A7D;
+    --r:18px; --r-sm:13px;
+  }
+  body{font-family:'Manrope',system-ui,sans-serif;color:var(--ink);
+    background:
+      radial-gradient(900px 420px at 50% -8%, rgba(217,180,91,.10), transparent 60%),
+      var(--bg);
+    min-height:100vh;padding:26px 18px 110px;line-height:1.5}
+  .wrap{max-width:430px;margin:0 auto}
+
+  .demo-note{text-align:center;color:var(--subtle);font-size:11.5px;letter-spacing:.3px;margin-bottom:22px}
+
+  .screen{display:none}
+  .screen.on{display:block;animation:fade .35s ease}
+  @keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+  /* hero header */
+  .hero{display:flex;flex-direction:column;align-items:center;text-align:center;margin-bottom:24px}
+  .crest{width:46px;height:46px;border-radius:50%;border:1px solid var(--gold-line);background:var(--gold-soft);
+    display:grid;place-items:center;font-size:20px;margin-bottom:14px}
+  .kicker{font-size:11px;letter-spacing:3px;text-transform:uppercase;color:var(--gold);font-weight:600;margin-bottom:6px}
+  .htitle{font-family:'Playfair Display',serif;font-size:30px;font-weight:600;letter-spacing:-.3px;line-height:1.12}
+  .sub{color:var(--muted);font-size:14px;margin-top:8px;max-width:32ch}
+  .rule{width:40px;height:1px;background:var(--gold-line);margin:16px auto 0}
+
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:18px;margin-bottom:14px}
+
+  .field{padding:13px 0;border-bottom:1px solid var(--line)}
+  .field:last-child{border-bottom:0}
+  .field span{display:block;font-size:11px;color:var(--gold);font-weight:600;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:5px}
+  .field input{width:100%;border:0;background:transparent;color:var(--ink);font:inherit;font-size:16px;padding:2px 0}
+  .field input:focus{outline:none}
+  .field input::placeholder{color:var(--subtle)}
+
+  .sec-label{font-size:11px;color:var(--gold);font-weight:600;text-transform:uppercase;letter-spacing:2px;margin-bottom:13px}
+  .chips{display:flex;flex-wrap:wrap;gap:9px}
+  .chip{border:1px solid var(--line-2);background:transparent;color:var(--ink);font:inherit;font-weight:600;font-size:14px;
+    padding:10px 15px;border-radius:999px;cursor:pointer;display:flex;align-items:center;gap:7px}
+  .chip.on{border-color:var(--gold-line);background:var(--gold-soft);color:var(--gold)}
+  .chip .puffs{color:var(--muted);font-weight:500;font-size:12px}
+  .note-line{color:var(--subtle);font-size:12px;margin-top:12px;font-style:italic}
+
+  .flavor{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 0;border-bottom:1px solid var(--line)}
+  .flavor:last-child{border-bottom:0}
+  .flavor .fname{font-weight:600;font-size:16px;font-family:'Playfair Display',serif}
+  .flavor .fhint{display:block;color:var(--red);font-size:12px;margin-top:3px;opacity:0;transition:opacity .2s}
+  .flavor.limit .fhint{opacity:1}
+  .stepper{display:flex;align-items:center;gap:14px}
+  .stepper button{width:30px;height:30px;border:1px solid var(--line-2);background:transparent;color:var(--ink);
+    font-size:18px;font-weight:500;cursor:pointer;border-radius:50%;display:grid;place-items:center}
+  .stepper button:active{background:var(--card-2)}
+  .stepper .qty{min-width:16px;text-align:center;font-weight:700;font-size:16px;color:var(--gold);font-variant-numeric:tabular-nums}
+  .stepper .qty.zero{color:var(--subtle)}
+
+  .summary{display:flex;justify-content:space-between;align-items:center;color:var(--muted);font-size:13px;
+    letter-spacing:.3px;padding:6px 4px 0;text-transform:uppercase}
+  .summary b{color:var(--gold);font-size:18px;font-family:'Playfair Display',serif}
+
+  /* primary action */
+  .btn{width:100%;border:0;border-radius:999px;font:inherit;font-weight:700;font-size:15px;letter-spacing:.4px;
+    padding:16px;cursor:pointer;background:var(--gold);color:#23200f;margin-top:8px}
+  .btn:active{transform:translateY(1px)}
+  .btn.ghost{background:transparent;color:var(--gold);border:1px solid var(--gold-line)}
+  .btn:disabled,.btn.off{opacity:.35;cursor:not-allowed}
+
+  /* confirmation */
+  .center{text-align:center;padding:30px 18px}
+  .checkwrap{width:78px;height:78px;border-radius:50%;margin:0 auto 18px;display:grid;place-items:center;
+    background:var(--gold-soft);border:1px solid var(--gold-line)}
+  .checkwrap .c{font-size:38px;color:var(--gold)}
+  .center h2{font-family:'Playfair Display',serif;font-size:24px;font-weight:600;margin-bottom:8px}
+  .center p{color:var(--muted);font-size:14px;margin-bottom:20px}
+  .linkbox{display:flex;gap:8px;background:var(--bg-2);border:1px solid var(--line);border-radius:var(--r-sm);padding:11px;align-items:center}
+  .linkbox code{flex:1;text-align:left;font-size:12.5px;color:var(--gold);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .linkbox .copy{border:1px solid var(--gold-line);background:transparent;color:var(--gold);font:inherit;font-weight:600;font-size:13px;padding:8px 13px;border-radius:9px;cursor:pointer}
+
+  /* tracking */
+  .ref{color:var(--subtle);font-size:13px;margin-bottom:6px}
+  .ref b{color:var(--ink)}
+  .steps{margin:6px 0}
+  .step{display:flex;gap:14px;align-items:flex-start}
+  .step .ico{width:26px;height:26px;border-radius:50%;flex:none;display:grid;place-items:center;font-size:12px;
+    background:var(--card-2);border:1px solid var(--line-2);color:var(--subtle)}
+  .step .line{width:1px;height:24px;background:var(--line-2);margin:2px 0 2px 12.5px}
+  .step.done .ico{background:var(--gold-soft);border-color:var(--gold-line);color:var(--gold)}
+  .step.active .ico{background:var(--gold);border-color:var(--gold);color:#23200f}
+  .step.reject .ico{background:rgba(232,138,125,.16);border-color:var(--red);color:var(--red)}
+  .step .tlabel{font-weight:600;font-size:15px}
+  .step .ttime{color:var(--subtle);font-size:12.5px}
+  .step.pending .tlabel{color:var(--subtle)}
+  .itemline{display:flex;justify-content:space-between;font-size:15px;color:var(--muted);padding:11px 0;border-bottom:1px solid var(--line)}
+  .itemline:last-child{border-bottom:0}
+  .itemline b{color:var(--gold);font-family:'Playfair Display',serif}
+  .track-toggle{display:flex;gap:8px;margin-top:8px}
+  .track-toggle button{flex:1;font:inherit;font-size:12px;font-weight:600;padding:10px;border-radius:9px;border:1px solid var(--line-2);background:transparent;color:var(--muted);cursor:pointer}
+  .track-toggle button.on{border-color:var(--gold-line);color:var(--gold);background:var(--gold-soft)}
+
+  /* fixed bottom navigation (positional differentiator) */
+  .bottomnav{position:fixed;left:0;right:0;bottom:0;background:rgba(12,13,17,.86);backdrop-filter:blur(14px);
+    border-top:1px solid var(--line);padding:8px 10px calc(8px + env(safe-area-inset-bottom));z-index:30}
+  .bottomnav .inner{max-width:430px;margin:0 auto;display:flex}
+  .bottomnav button{flex:1;border:0;background:transparent;color:var(--subtle);font:inherit;font-weight:600;font-size:10.5px;
+    cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px 2px}
+  .bottomnav button .ni{font-size:18px;line-height:1}
+  .bottomnav button.on{color:var(--gold)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="demo-note">Tema C · Midnight Premium — maquete só visual.</div>
+
+  <!-- ENTRADA -->
+  <section class="screen on" id="welcome">
+    <div class="hero">
+      <div class="crest">🛒</div>
+      <div class="kicker" id="greet">Bem-vindo</div>
+      <div class="htitle">VapeTrack</div>
+      <p class="sub">Identifica-te para iniciar o teu pedido.</p>
+      <div class="rule"></div>
+    </div>
+    <div class="card">
+      <label class="field"><span>O teu nome</span><input id="wName" placeholder="ex.: Bruce" type="text"></label>
+      <label class="field"><span>Telemóvel</span><input id="wPhone" placeholder="912 345 678" inputmode="tel"></label>
+    </div>
+    <button class="btn off" id="goOrder" disabled onclick="show('order')">Continuar</button>
+  </section>
+
+  <!-- PEDIDO -->
+  <section class="screen" id="order">
+    <div class="hero">
+      <div class="kicker">A tua seleção</div>
+      <div class="htitle">Escolhe os sabores</div>
+      <p class="sub">Sem preços — combinamos na entrega.</p>
+    </div>
+    <div class="card">
+      <div class="sec-label">Modelo</div>
+      <div class="chips" id="modelChips"></div>
+      <div class="note-line" id="modelNote"></div>
+    </div>
+    <div class="card" id="flavorList"></div>
+    <div class="summary"><span>Total de vapes</span><b id="sumQty">0</b></div>
+    <button class="btn" onclick="show('done')">Enviar pedido</button>
+  </section>
+
+  <!-- CONFIRMAÇÃO -->
+  <section class="screen" id="done">
+    <div class="card center">
+      <div class="checkwrap"><span class="c">✓</span></div>
+      <h2>Pedido recebido</h2>
+      <p>Guarda este link para acompanhares — não enviamos mensagens.</p>
+      <div class="linkbox"><code>vapetrack.pt/p/7Kq9-x2M4</code><button class="copy">Copiar</button></div>
+    </div>
+    <button class="btn ghost" onclick="show('track')">Abrir o meu link →</button>
+  </section>
+
+  <!-- ESTADO -->
+  <section class="screen" id="track">
+    <div class="hero"><div class="kicker">Acompanhamento</div><div class="htitle">O teu pedido</div></div>
+    <p class="ref">Pedido <b>#7Kq9</b> · Bruce · 912 345 678</p>
+    <div class="card"><div class="steps" id="steps"></div></div>
+    <div class="card">
+      <div class="sec-label">O que pediste</div>
+      <div class="itemline"><span>Cherry Cola</span><b>1</b></div>
+      <div class="itemline"><span>Lemon Lime</span><b>2</b></div>
+    </div>
+    <div class="demo-note" style="margin:14px 0 8px">Pré-visualizar estado (demo):</div>
+    <div class="track-toggle">
+      <button class="on" onclick="setState('analise',this)">Em análise</button>
+      <button onclick="setState('aprovado',this)">Aprovado</button>
+      <button onclick="setState('recusado',this)">Recusado</button>
+    </div>
+  </section>
+</div>
+
+<!-- fixed bottom nav -->
+<nav class="bottomnav">
+  <div class="inner">
+    <button class="on" data-screen="welcome"><span class="ni">①</span>Entrada</button>
+    <button data-screen="order"><span class="ni">②</span>Pedido</button>
+    <button data-screen="done"><span class="ni">③</span>Confirm.</button>
+    <button data-screen="track"><span class="ni">④</span>Estado</button>
+  </div>
+</nav>
+
+<script>
+  const MODELS = [
+    { id:'kingpro40', name:'KingPro', puffs:'40k', flavors:[
+      { name:'Cherry Cola', stock:1 },{ name:'Lemon Lime', stock:8 },{ name:'Watermelon Ice', stock:5 },
+      { name:'Blueberry', stock:3 },{ name:'Strawberry Mango', stock:6 },
+    ]},
+  ];
+  let flavors = MODELS[0].flavors;
+  const qty = {};
+  const list = document.getElementById('flavorList');
+  function renderFlavors(model){
+    flavors=model.flavors; for(const k in qty)delete qty[k]; list.innerHTML='';
+    flavors.forEach((f,i)=>{ qty[i]=0;
+      const row=document.createElement('div'); row.className='flavor'; row.id='fl'+i;
+      row.innerHTML=`<div><span class="fname">${f.name}</span>
+          <span class="fhint">Só há ${f.stock} disponível${f.stock>1?'eis':''}</span></div>
+        <div class="stepper">
+          <button onclick="step(${i},-1)">−</button>
+          <span class="qty zero" id="q${i}">0</span>
+          <button onclick="step(${i},1)">+</button></div>`;
+      list.appendChild(row); });
+    document.getElementById('sumQty').textContent='0';
+  }
+  function step(i,d){
+    const f=flavors[i]; let v=qty[i]+d; const row=document.getElementById('fl'+i);
+    if(v<0)v=0;
+    if(v>f.stock){v=f.stock;row.classList.add('limit');setTimeout(()=>row.classList.remove('limit'),2200);}
+    else row.classList.remove('limit');
+    qty[i]=v; const q=document.getElementById('q'+i); q.textContent=v; q.classList.toggle('zero',v===0);
+    document.getElementById('sumQty').textContent=Object.values(qty).reduce((a,b)=>a+b,0);
+  }
+  const modelChips=document.getElementById('modelChips');
+  MODELS.forEach((m,i)=>{ const c=document.createElement('button');
+    c.className='chip'+(i===0?' on':''); c.innerHTML=`${m.name} <span class="puffs">${m.puffs}</span>`;
+    c.onclick=()=>{modelChips.querySelectorAll('.chip').forEach(x=>x.classList.remove('on'));c.classList.add('on');renderFlavors(m);};
+    modelChips.appendChild(c); });
+  document.getElementById('modelNote').textContent = MODELS.length===1?'Único modelo disponível de momento.':'Escolhe o modelo que queres.';
+  renderFlavors(MODELS[0]);
+
+  (function(){const h=new Date().getHours();const g=h<12?'Bom dia':h<20?'Boa tarde':'Boa noite';
+    document.getElementById('greet').textContent=g;})();
+
+  const wName=document.getElementById('wName'),wPhone=document.getElementById('wPhone'),goOrder=document.getElementById('goOrder');
+  function checkEntry(){const ok=!!(wName.value.trim()&&wPhone.value.trim());goOrder.disabled=!ok;goOrder.classList.toggle('off',!ok);}
+  wName.addEventListener('input',checkEntry); wPhone.addEventListener('input',checkEntry);
+
+  function show(id){
+    document.querySelectorAll('.screen').forEach(s=>s.classList.remove('on'));
+    document.getElementById(id).classList.add('on');
+    document.querySelectorAll('.bottomnav button').forEach(b=>b.classList.toggle('on',b.dataset.screen===id));
+    window.scrollTo({top:0,behavior:'smooth'});
+  }
+  document.querySelectorAll('.bottomnav button').forEach(b=>b.onclick=()=>show(b.dataset.screen));
+
+  function setState(state,btn){
+    document.querySelectorAll('.track-toggle button').forEach(b=>b.classList.remove('on')); if(btn)btn.classList.add('on');
+    const recebido='<div class="step done"><div class="ico">✓</div><div><div class="tlabel">Recebido</div><div class="ttime">Hoje, 21:14</div></div></div><div class="step"><div class="line"></div></div>';
+    let mid,end;
+    if(state==='analise'){ mid='<div class="step active"><div class="ico">●</div><div><div class="tlabel">Em análise</div><div class="ttime">A aguardar confirmação</div></div></div>'; end=''; }
+    else if(state==='aprovado'){ mid='<div class="step done"><div class="ico">✓</div><div><div class="tlabel">Em análise</div><div class="ttime">Hoje, 21:20</div></div></div><div class="step"><div class="line"></div></div>'; end='<div class="step done"><div class="ico">✓</div><div><div class="tlabel" style="color:var(--green)">Aprovado</div><div class="ttime">Combinamos a entrega contigo.</div></div></div>'; }
+    else { mid='<div class="step done"><div class="ico">✓</div><div><div class="tlabel">Em análise</div><div class="ttime">Hoje, 21:20</div></div></div><div class="step"><div class="line"></div></div>'; end='<div class="step reject"><div class="ico">✕</div><div><div class="tlabel" style="color:var(--red)">Recusado</div><div class="ttime">Sem stock suficiente de momento.</div></div></div>'; }
+    document.getElementById('steps').innerHTML=recebido+mid+end;
+  }
+  setState('analise');
+</script>
+</body>
+</html>

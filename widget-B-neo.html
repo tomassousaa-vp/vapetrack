@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>VapeTrack · Pedidos — Tema B (Neo-Pop)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Archivo+Black&display=swap" rel="stylesheet">
+<style>
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  :root{
+    --bg:#FFE9CE; --paper:#FFFDF7; --ink:#15110A;
+    --blue:#2D5BFF; --pink:#FF4D8D; --yellow:#FFD23F; --green:#19C37D; --red:#FF3B30;
+    --sh:4px 4px 0 var(--ink); --sh-lg:6px 6px 0 var(--ink);
+    --r:14px;
+  }
+  body{font-family:'Space Grotesk',system-ui,sans-serif;color:var(--ink);
+    background:var(--bg);min-height:100vh;padding:20px 16px 110px;line-height:1.45}
+  .wrap{max-width:430px;margin:0 auto}
+
+  .demo-switch{display:flex;gap:7px;margin-bottom:20px}
+  .demo-switch button{flex:1;border:2px solid var(--ink);background:var(--paper);color:var(--ink);
+    font:inherit;font-weight:700;font-size:11.5px;padding:9px 3px;border-radius:10px;cursor:pointer}
+  .demo-switch button.on{background:var(--blue);color:#fff;box-shadow:var(--sh)}
+  .demo-note{text-align:center;color:#8a7a5e;font-size:12px;font-weight:600;margin-bottom:20px}
+
+  .screen{display:none}
+  .screen.on{display:block;animation:pop .25s ease}
+  @keyframes pop{from{opacity:0;transform:scale(.98)}to{opacity:1;transform:none}}
+
+  .brand{display:flex;align-items:center;gap:10px;margin-bottom:16px}
+  .brand .dot{width:40px;height:40px;border-radius:11px;background:var(--yellow);border:2px solid var(--ink);
+    box-shadow:var(--sh);display:grid;place-items:center;font-size:19px}
+  .brand h1{font-size:20px;font-weight:700}
+
+  .greet{font-family:'Archivo Black',sans-serif;font-size:34px;line-height:1.02;margin-bottom:10px;letter-spacing:-1px}
+  .greet em{font-style:normal;background:var(--yellow);padding:0 6px;border:2px solid var(--ink);display:inline-block;transform:rotate(-2deg)}
+  .sub{font-size:14.5px;font-weight:500;margin-bottom:20px;max-width:34ch}
+
+  .badge{display:inline-block;background:var(--pink);color:#fff;border:2px solid var(--ink);box-shadow:var(--sh);
+    font-weight:700;font-size:12px;padding:5px 11px;border-radius:8px;transform:rotate(3deg);margin-bottom:14px}
+
+  .card{background:var(--paper);border:2px solid var(--ink);border-radius:var(--r);box-shadow:var(--sh);padding:14px;margin-bottom:14px}
+
+  .field{margin-bottom:12px}
+  .field:last-child{margin-bottom:0}
+  .field span{display:block;font-size:12px;font-weight:700;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px}
+  .field input{width:100%;border:2px solid var(--ink);background:#fff;color:var(--ink);font:inherit;font-size:15px;font-weight:500;padding:12px;border-radius:10px}
+  .field input:focus{outline:none;box-shadow:var(--sh)}
+  .field input::placeholder{color:#a99}
+
+  .sec-label{font-weight:700;font-size:13px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:11px}
+  .chips{display:flex;flex-wrap:wrap;gap:9px}
+  .chip{border:2px solid var(--ink);background:#fff;color:var(--ink);font:inherit;font-weight:700;font-size:14px;
+    padding:9px 13px;border-radius:10px;cursor:pointer;display:flex;align-items:center;gap:7px}
+  .chip.on{background:var(--blue);color:#fff;box-shadow:var(--sh)}
+  .chip .puffs{font-weight:500;font-size:12px;opacity:.8}
+  .note-line{font-size:12.5px;font-weight:600;color:#8a7a5e;margin-top:11px}
+
+  .flavor{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px;border:2px solid var(--ink);
+    border-radius:11px;background:#fff;margin-bottom:11px}
+  .flavor:last-child{margin-bottom:0}
+  .flavor .fname{font-weight:700;font-size:15px}
+  .flavor .fhint{display:block;color:var(--red);font-weight:700;font-size:12px;margin-top:3px;opacity:0;transition:opacity .15s}
+  .flavor.limit{box-shadow:var(--sh);border-color:var(--red)}
+  .flavor.limit .fhint{opacity:1}
+  .stepper{display:flex;align-items:center;gap:8px}
+  .stepper button{width:36px;height:36px;border:2px solid var(--ink);background:var(--yellow);color:var(--ink);
+    font-size:20px;font-weight:700;cursor:pointer;border-radius:9px;display:grid;place-items:center}
+  .stepper button:active{box-shadow:var(--sh);transform:translate(-1px,-1px)}
+  .stepper .qty{min-width:22px;text-align:center;font-weight:700;font-size:17px;font-variant-numeric:tabular-nums}
+  .stepper .qty.zero{color:#bbb}
+
+  /* sticky bottom CTA bar */
+  .ctabar{position:fixed;left:0;right:0;bottom:0;padding:14px 16px calc(14px + env(safe-area-inset-bottom));
+    background:linear-gradient(transparent,var(--bg) 26%);z-index:20}
+  .ctabar .inner{max-width:430px;margin:0 auto;display:flex;align-items:center;gap:12px}
+  .ctabar .tot{font-weight:700;font-size:13px}
+  .ctabar .tot b{font-size:20px;display:block}
+  .btn{flex:1;border:2px solid var(--ink);border-radius:11px;font:inherit;font-weight:700;font-size:16px;
+    padding:15px;cursor:pointer;background:var(--blue);color:#fff;box-shadow:var(--sh-lg);text-transform:uppercase;letter-spacing:.5px}
+  .btn:active{transform:translate(-2px,-2px);box-shadow:8px 8px 0 var(--ink)}
+  .btn.pink{background:var(--pink)}
+  .btn:disabled,.btn.off{background:#d9cdb6;color:#fff;box-shadow:none;cursor:not-allowed;border-color:#b9ad96}
+  .btn.full{width:100%;flex:none}
+
+  /* confirmation */
+  .center{text-align:center;padding:26px 16px}
+  .checkwrap{width:84px;height:84px;border-radius:14px;margin:0 auto 16px;display:grid;place-items:center;
+    background:var(--green);border:2px solid var(--ink);box-shadow:var(--sh);transform:rotate(-3deg)}
+  .checkwrap .c{font-size:44px;color:#fff;transform:rotate(3deg)}
+  .center h2{font-family:'Archivo Black',sans-serif;font-size:24px;margin-bottom:10px}
+  .center p{font-weight:500;font-size:14px;margin-bottom:18px}
+  .linkbox{display:flex;gap:8px;background:#fff;border:2px solid var(--ink);border-radius:10px;padding:9px;align-items:center}
+  .linkbox code{flex:1;text-align:left;font-size:12.5px;font-weight:600;color:var(--blue);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .linkbox .copy{border:2px solid var(--ink);background:var(--yellow);color:var(--ink);font:inherit;font-weight:700;font-size:13px;padding:7px 11px;border-radius:8px;cursor:pointer}
+
+  /* tracking */
+  .ref{font-weight:600;font-size:13.5px;margin-bottom:16px}
+  .ref b{background:var(--yellow);padding:1px 6px;border:2px solid var(--ink);border-radius:6px}
+  .steps{display:flex;flex-direction:column;gap:10px}
+  .tstep{display:flex;align-items:center;gap:12px;border:2px solid var(--ink);border-radius:11px;padding:12px;background:#fff}
+  .tstep .ico{width:32px;height:32px;border-radius:8px;flex:none;display:grid;place-items:center;font-weight:700;font-size:15px;border:2px solid var(--ink);background:#fff}
+  .tstep.done .ico{background:var(--green);color:#fff}
+  .tstep.active{box-shadow:var(--sh)}
+  .tstep.active .ico{background:var(--blue);color:#fff}
+  .tstep.reject .ico{background:var(--red);color:#fff}
+  .tstep .tlabel{font-weight:700;font-size:15px}
+  .tstep .ttime{font-size:12px;font-weight:500;color:#8a7a5e}
+  .tstep.pending{opacity:.5}
+  .itemline{display:flex;justify-content:space-between;font-size:14.5px;font-weight:600;padding:9px 0;border-bottom:2px dashed #e3d6bd}
+  .itemline:last-child{border-bottom:0}
+  .track-toggle{display:flex;gap:8px;margin-top:8px}
+  .track-toggle button{flex:1;font:inherit;font-size:12px;font-weight:700;padding:10px;border-radius:9px;border:2px solid var(--ink);background:#fff;color:var(--ink);cursor:pointer}
+  .track-toggle button.on{background:var(--ink);color:#fff}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="demo-switch">
+    <button class="on" data-screen="welcome">1·Entrada</button>
+    <button data-screen="order">2·Pedido</button>
+    <button data-screen="done">3·Confirm.</button>
+    <button data-screen="track">4·Estado</button>
+  </div>
+  <div class="demo-note">Tema B · Neo-Pop — maquete só visual.</div>
+
+  <!-- ENTRADA -->
+  <section class="screen on" id="welcome">
+    <div class="brand"><div class="dot">🛒</div><h1>VapeTrack</h1></div>
+    <p class="greet" id="greet">Olá!</p>
+    <p class="sub">Diz quem és e escolhe os teus sabores. Combinamos a entrega depois.</p>
+    <div class="card">
+      <label class="field"><span>O teu nome</span><input id="wName" placeholder="ex.: Bruce" type="text"></label>
+      <label class="field"><span>Telemóvel</span><input id="wPhone" placeholder="912 345 678" inputmode="tel"></label>
+    </div>
+  </section>
+
+  <!-- PEDIDO -->
+  <section class="screen" id="order">
+    <div class="brand"><div class="dot">🛒</div><h1>VapeTrack</h1></div>
+    <span class="badge">SEM PREÇOS ✦</span>
+    <div class="card">
+      <div class="sec-label">Modelo</div>
+      <div class="chips" id="modelChips"></div>
+      <div class="note-line" id="modelNote"></div>
+    </div>
+    <div id="flavorList"></div>
+  </section>
+
+  <!-- CONFIRMAÇÃO -->
+  <section class="screen" id="done">
+    <div class="brand"><div class="dot">🛒</div><h1>VapeTrack</h1></div>
+    <div class="card center">
+      <div class="checkwrap"><span class="c">✓</span></div>
+      <h2>PEDIDO RECEBIDO!</h2>
+      <p>Guarda este link para veres o estado — não enviamos mensagens.</p>
+      <div class="linkbox"><code>vapetrack.pt/p/7Kq9-x2M4</code><button class="copy">Copiar</button></div>
+    </div>
+  </section>
+
+  <!-- ESTADO -->
+  <section class="screen" id="track">
+    <div class="brand"><div class="dot">🛒</div><h1>VapeTrack</h1></div>
+    <p class="ref">Pedido <b>#7Kq9</b> · Bruce · 912 345 678</p>
+    <div class="card"><div class="steps" id="steps"></div></div>
+    <div class="card">
+      <div class="sec-label">O que pediste</div>
+      <div class="itemline"><span>Cherry Cola</span><span>×1</span></div>
+      <div class="itemline"><span>Lemon Lime</span><span>×2</span></div>
+    </div>
+    <div class="demo-note" style="margin:14px 0 8px">Pré-visualizar estado (demo):</div>
+    <div class="track-toggle">
+      <button class="on" onclick="setState('analise',this)">Em análise</button>
+      <button onclick="setState('aprovado',this)">Aprovado</button>
+      <button onclick="setState('recusado',this)">Recusado</button>
+    </div>
+  </section>
+</div>
+
+<!-- sticky CTA -->
+<div class="ctabar" id="ctabar">
+  <div class="inner">
+    <div class="tot" id="ctaTot" style="display:none">Vapes<b id="sumQty">0</b></div>
+    <button class="btn off full" id="goOrder" disabled onclick="show('order')">Continuar →</button>
+  </div>
+</div>
+
+<script>
+  const MODELS = [
+    { id:'kingpro40', name:'KingPro', puffs:'40k', flavors:[
+      { name:'Cherry Cola', stock:1 },{ name:'Lemon Lime', stock:8 },{ name:'Watermelon Ice', stock:5 },
+      { name:'Blueberry', stock:3 },{ name:'Strawberry Mango', stock:6 },
+    ]},
+  ];
+  let flavors = MODELS[0].flavors;
+  const qty = {};
+  const list = document.getElementById('flavorList');
+  function renderFlavors(model){
+    flavors=model.flavors; for(const k in qty)delete qty[k]; list.innerHTML='';
+    flavors.forEach((f,i)=>{ qty[i]=0;
+      const row=document.createElement('div'); row.className='flavor'; row.id='fl'+i;
+      row.innerHTML=`<div><span class="fname">${f.name}</span>
+          <span class="fhint">Só há ${f.stock}! ✋</span></div>
+        <div class="stepper">
+          <button onclick="step(${i},-1)">−</button>
+          <span class="qty zero" id="q${i}">0</span>
+          <button onclick="step(${i},1)">+</button></div>`;
+      list.appendChild(row); });
+    document.getElementById('sumQty').textContent='0';
+  }
+  function step(i,d){
+    const f=flavors[i]; let v=qty[i]+d; const row=document.getElementById('fl'+i);
+    if(v<0)v=0;
+    if(v>f.stock){v=f.stock;row.classList.add('limit');setTimeout(()=>row.classList.remove('limit'),2200);}
+    else row.classList.remove('limit');
+    qty[i]=v; const q=document.getElementById('q'+i); q.textContent=v; q.classList.toggle('zero',v===0);
+    document.getElementById('sumQty').textContent=Object.values(qty).reduce((a,b)=>a+b,0);
+  }
+  const modelChips=document.getElementById('modelChips');
+  MODELS.forEach((m,i)=>{ const c=document.createElement('button');
+    c.className='chip'+(i===0?' on':''); c.innerHTML=`${m.name} <span class="puffs">${m.puffs}</span>`;
+    c.onclick=()=>{modelChips.querySelectorAll('.chip').forEach(x=>x.classList.remove('on'));c.classList.add('on');renderFlavors(m);};
+    modelChips.appendChild(c); });
+  document.getElementById('modelNote').textContent = MODELS.length===1?'Único modelo disponível de momento.':'Escolhe o modelo que queres.';
+  renderFlavors(MODELS[0]);
+
+  (function(){const h=new Date().getHours();const g=h<12?'Bom dia':h<20?'Boa tarde':'Boa noite';
+    document.getElementById('greet').innerHTML=`<em>${g}</em> 🤘`;})();
+
+  const wName=document.getElementById('wName'),wPhone=document.getElementById('wPhone'),goOrder=document.getElementById('goOrder');
+  function checkEntry(){const ok=!!(wName.value.trim()&&wPhone.value.trim());goOrder.disabled=!ok;goOrder.classList.toggle('off',!ok);}
+  wName.addEventListener('input',checkEntry); wPhone.addEventListener('input',checkEntry);
+
+  // CTA bar changes per screen
+  function syncCta(id){
+    const bar=document.getElementById('ctabar'), tot=document.getElementById('ctaTot');
+    if(id==='welcome'){ bar.style.display='block'; tot.style.display='none';
+      goOrder.className='btn off full'; goOrder.disabled=!(wName.value.trim()&&wPhone.value.trim());
+      if(!goOrder.disabled)goOrder.classList.remove('off'); goOrder.textContent='Continuar →'; goOrder.setAttribute('onclick',"show('order')"); }
+    else if(id==='order'){ bar.style.display='block'; tot.style.display='block';
+      goOrder.className='btn pink'; goOrder.disabled=false; goOrder.textContent='Enviar pedido'; goOrder.setAttribute('onclick',"show('done')"); }
+    else { bar.style.display='none'; }
+  }
+  function show(id){
+    document.querySelectorAll('.screen').forEach(s=>s.classList.remove('on'));
+    document.getElementById(id).classList.add('on');
+    document.querySelectorAll('.demo-switch button').forEach(b=>b.classList.toggle('on',b.dataset.screen===id));
+    syncCta(id); window.scrollTo({top:0,behavior:'smooth'});
+  }
+  document.querySelectorAll('.demo-switch button').forEach(b=>b.onclick=()=>show(b.dataset.screen));
+
+  function setState(state,btn){
+    document.querySelectorAll('.track-toggle button').forEach(b=>b.classList.remove('on')); if(btn)btn.classList.add('on');
+    const recebido='<div class="tstep done"><div class="ico">✓</div><div><div class="tlabel">Recebido</div><div class="ttime">Hoje, 21:14</div></div></div>';
+    let mid,end;
+    if(state==='analise'){ mid='<div class="tstep active"><div class="ico">●</div><div><div class="tlabel">Em análise</div><div class="ttime">A aguardar confirmação</div></div></div>'; end='<div class="tstep pending"><div class="ico">3</div><div><div class="tlabel">Resposta</div><div class="ttime">—</div></div></div>'; }
+    else if(state==='aprovado'){ mid='<div class="tstep done"><div class="ico">✓</div><div><div class="tlabel">Em análise</div><div class="ttime">Hoje, 21:20</div></div></div>'; end='<div class="tstep done"><div class="ico">✓</div><div><div class="tlabel">Aprovado ✅</div><div class="ttime">Combinamos a entrega.</div></div></div>'; }
+    else { mid='<div class="tstep done"><div class="ico">✓</div><div><div class="tlabel">Em análise</div><div class="ttime">Hoje, 21:20</div></div></div>'; end='<div class="tstep reject"><div class="ico">✕</div><div><div class="tlabel">Recusado</div><div class="ttime">Sem stock suficiente.</div></div></div>'; }
+    document.getElementById('steps').innerHTML=recebido+mid+end;
+  }
+  setState('analise'); syncCta('welcome');
+</script>
+</body>
+</html>
