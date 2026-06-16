@@ -18,8 +18,9 @@
   }
   body{font-family:'Quicksand',system-ui,sans-serif;color:var(--ink);min-height:100vh;
     padding:22px 16px 56px;line-height:1.5;font-weight:600;
-    background:linear-gradient(160deg,#FF4FA0 0%,#A24BFF 50%,#16E0C5 100%);
-    background-attachment:fixed}
+    background:linear-gradient(160deg,#FF4FA0,#A24BFF,#16E0C5,#A24BFF,#FF4FA0);
+    background-size:300% 300%;animation:bgShift 16s ease infinite}
+  @keyframes bgShift{0%{background-position:0% 50%}50%{background-position:100% 50%}100%{background-position:0% 50%}}
   .wrap{max-width:430px;margin:0 auto}
 
   .demo-switch{display:flex;gap:6px;background:rgba(255,255,255,.6);border-radius:999px;padding:5px;margin-bottom:14px;
@@ -35,7 +36,11 @@
 
   .brand{display:flex;align-items:center;justify-content:center;gap:11px;margin-bottom:12px}
   .brand .dot{width:44px;height:44px;border-radius:16px;background:linear-gradient(135deg,var(--pink),var(--lilac));
-    display:grid;place-items:center;font-size:21px;box-shadow:0 10px 22px rgba(255,143,177,.4)}
+    display:grid;place-items:center;font-size:21px;box-shadow:0 10px 22px rgba(255,46,139,.4);
+    animation:bob 3s ease-in-out infinite}
+  @keyframes bob{0%,100%{transform:translateY(0) rotate(-3deg)}50%{transform:translateY(-6px) rotate(3deg)}}
+  .wave{display:inline-block;transform-origin:72% 78%;animation:wave 2.4s ease-in-out infinite}
+  @keyframes wave{0%,62%,100%{transform:rotate(0)}10%{transform:rotate(16deg)}20%{transform:rotate(-8deg)}30%{transform:rotate(16deg)}40%{transform:rotate(-4deg)}50%{transform:rotate(11deg)}}
   .brand h1{font-family:'Baloo 2',cursive;font-size:21px;font-weight:800;color:#fff;text-shadow:0 2px 10px rgba(123,61,255,.3)}
   .greet{font-family:'Baloo 2',cursive;font-size:33px;font-weight:800;color:#fff;margin-bottom:4px;line-height:1.1;text-align:center;text-shadow:0 4px 18px rgba(0,0,0,.14)}
   .sub{color:rgba(255,255,255,.95);font-size:14.5px;margin-bottom:20px;text-align:center;font-weight:600;text-shadow:0 2px 10px rgba(0,0,0,.1)}
@@ -59,12 +64,14 @@
   .note-line{color:var(--subtle);font-size:12.5px;margin-top:12px;font-weight:600}
 
   .flavor{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 14px;border-radius:18px;
-    background:#FCF9FF;margin-bottom:11px}
+    background:#FCF9FF;margin-bottom:11px;animation:flavIn .5s cubic-bezier(.34,1.56,.64,1) both}
   .flavor:last-child{margin-bottom:0}
+  @keyframes flavIn{from{opacity:0;transform:translateY(12px) scale(.96)}to{opacity:1;transform:none}}
+  @keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}40%{transform:translateX(6px)}60%{transform:translateX(-4px)}80%{transform:translateX(4px)}}
   .flavor .emo{font-size:22px;margin-right:2px;letter-spacing:1px;white-space:nowrap}
   .flavor .fname{font-weight:700;font-size:15px;color:var(--ink-strong)}
   .flavor .fhint{display:block;color:var(--red);font-size:12px;margin-top:2px;font-weight:700;opacity:0;transition:opacity .2s}
-  .flavor.limit{background:var(--pink-2)}
+  .flavor.limit{background:var(--pink-2);animation:shake .42s ease}
   .flavor.limit .fhint{opacity:1}
   .stepper{display:flex;align-items:center;gap:4px;flex:none}
   .stepper button{width:38px;height:38px;border:0;color:#fff;font-size:21px;font-weight:700;cursor:pointer;border-radius:50%;display:grid;place-items:center;
@@ -74,6 +81,8 @@
   .stepper button:active{transform:scale(.92)}
   .stepper .qty{min-width:30px;text-align:center;font-weight:800;font-size:17px;color:var(--ink-strong);font-variant-numeric:tabular-nums}
   .stepper .qty.zero{color:var(--subtle)}
+  .stepper .qty.pop{animation:qtyPop .32s cubic-bezier(.34,1.56,.64,1)}
+  @keyframes qtyPop{0%{transform:scale(1)}45%{transform:scale(1.45)}100%{transform:scale(1)}}
 
   .summary{display:flex;justify-content:space-between;align-items:center;color:var(--muted);font-size:14px;padding:4px 6px 16px;font-weight:700}
   .summary b{color:var(--ink-strong);font-size:19px;font-family:'Baloo 2',cursive}
@@ -86,7 +95,9 @@
 
   .center{text-align:center;padding:30px 18px}
   .checkwrap{width:88px;height:88px;border-radius:50%;margin:0 auto 16px;display:grid;place-items:center;
-    background:linear-gradient(135deg,var(--mint-2),var(--mint));box-shadow:0 12px 26px rgba(127,224,195,.45)}
+    background:linear-gradient(135deg,var(--mint-2),var(--mint));box-shadow:0 12px 26px rgba(6,224,182,.45);
+    animation:glowPulse 2.4s ease-in-out infinite}
+  @keyframes glowPulse{0%,100%{box-shadow:0 12px 26px rgba(6,224,182,.45);transform:scale(1)}50%{box-shadow:0 14px 42px rgba(6,224,182,.75);transform:scale(1.04)}}
   .checkwrap .c{font-size:44px;color:#fff}
   .center h2{font-family:'Baloo 2',cursive;font-size:25px;font-weight:800;color:var(--ink-strong);margin-bottom:8px}
   .center p{color:var(--muted);font-size:14px;margin-bottom:18px}
@@ -112,6 +123,12 @@
   .track-toggle{display:flex;gap:8px;margin-top:8px}
   .track-toggle button{flex:1;font:inherit;font-size:12px;font-weight:700;padding:10px;border-radius:14px;border:2px solid var(--lilac-2);background:#fff;color:var(--muted);cursor:pointer}
   .track-toggle button.on{background:var(--lilac-2);color:var(--ink-strong);border-color:var(--lilac)}
+
+  /* CTA principal pulsa suavemente para chamar à ação (não quando inativo) */
+  .btn:not(:disabled):not(.off):not(.ghost){animation:ctaPulse 2.8s ease-in-out infinite}
+  @keyframes ctaPulse{0%,100%{box-shadow:0 12px 26px rgba(255,46,139,.45)}50%{box-shadow:0 16px 36px rgba(255,46,139,.68)}}
+
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
 <body>
@@ -183,6 +200,7 @@
     flavors=model.flavors; for(const k in qty)delete qty[k]; list.innerHTML='';
     flavors.forEach((f,i)=>{ qty[i]=0;
       const row=document.createElement('div'); row.className='flavor'; row.id='fl'+i;
+      row.style.animationDelay=(i*0.07)+'s';
       row.innerHTML=`<div style="display:flex;align-items:center;gap:10px"><span class="emo">${f.emo||'🍭'}</span>
           <div><span class="fname">${f.name}</span>
           <span class="fhint">Só há ${f.stock} disponível${f.stock>1?'eis':''}</span></div></div>
@@ -201,9 +219,11 @@
   function step(i,d){
     const f=flavors[i]; let v=qty[i]+d; const row=document.getElementById('fl'+i);
     if(v<0)v=0;
-    if(v>f.stock){v=f.stock;row.classList.add('limit');setTimeout(()=>row.classList.remove('limit'),2200);}
+    if(v>f.stock){v=f.stock;row.style.animationDelay='0s';row.classList.remove('limit');void row.offsetWidth;row.classList.add('limit');
+      clearTimeout(row._lt);row._lt=setTimeout(()=>row.classList.remove('limit'),2200);}
     else row.classList.remove('limit');
     qty[i]=v; const q=document.getElementById('q'+i); q.textContent=v; q.classList.toggle('zero',v===0);
+    q.classList.remove('pop'); void q.offsetWidth; q.classList.add('pop');
     syncSend();
   }
   const modelChips=document.getElementById('modelChips');
@@ -215,7 +235,7 @@
   renderFlavors(MODELS[0]);
 
   (function(){const h=new Date().getHours();const g=h<12?'Bom dia':h<20?'Boa tarde':'Boa noite';
-    document.getElementById('greet').innerHTML=g+' 👋';})();
+    document.getElementById('greet').innerHTML=g+' <span class="wave">👋</span>';})();
 
   const wName=document.getElementById('wName'),wPhone=document.getElementById('wPhone'),goOrder=document.getElementById('goOrder');
   function checkEntry(){const ok=!!(wName.value.trim()&&wPhone.value.trim());goOrder.disabled=!ok;goOrder.classList.toggle('off',!ok);}
