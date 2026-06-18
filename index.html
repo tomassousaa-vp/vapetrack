@@ -1347,6 +1347,55 @@
       *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
       body::before { animation: none; }
     }
+
+    /* Wrapper dos links da home — transparente no telemóvel (não muda nada) */
+    .home-links { display: contents; }
+
+    /* ═══════════════════════════════════════
+       VISTA DESKTOP / PORTÁTIL (≥1000px)
+       Aditivo: abaixo de 1000px (telemóvel) nada muda.
+    ═══════════════════════════════════════ */
+    @media (min-width: 1000px) {
+      .app {
+        max-width: 1160px;
+        padding-left: 28px; padding-right: 28px;
+        padding-top: calc(env(safe-area-inset-top, 0px) + 18px);
+      }
+      .page { padding: 12px 8px 56px; gap: 22px; }
+
+      /* ── Home / Visão Geral em grelha de dashboard ── */
+      .hero { padding: 34px 36px; margin: 4px 0 6px; }
+      .hero-line { font-size: 34px; }
+      .hero-date { font-size: 15px; }
+
+      .nav-cards {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 16px; margin-bottom: 16px;
+      }
+      .nav-card { padding: 20px; border-radius: 18px; }
+      .nav-card:hover {
+        transform: translateY(-3px);
+        border-color: rgba(167, 139, 250, 0.45);
+        background: rgba(28, 36, 68, 0.6);
+      }
+
+      /* Links inferiores lado a lado */
+      .home-links { display: flex; gap: 16px; }
+      .financial-link, .settings-link { flex: 1; transition: transform 0.12s ease, border-color 0.12s ease; }
+      .financial-link:hover, .settings-link:hover { transform: translateY(-3px); border-color: rgba(167, 139, 250, 0.45); }
+
+      /* ── Sub-páginas: aproveitar a largura ── */
+      .add-btn.primary { max-width: 280px; }
+      .kpi-row { gap: 16px; }
+
+      /* Listas em duas colunas */
+      .list {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 14px; align-items: start;
+      }
+    }
   </style>
 </head>
 <body>
@@ -1456,6 +1505,8 @@
       </button>
     </div>
 
+    <!-- Wrapper: transparente no telemóvel, linha de 2 colunas no PC -->
+    <div class="home-links">
     <!-- Financial summary access -->
     <button type="button" class="financial-link" id="openFinanceiroBtn">
       <div class="financial-link-icon">📊</div>
@@ -1475,6 +1526,7 @@
       </div>
       <div class="nav-card-arrow">→</div>
     </button>
+    </div>
 
   </section>
 
@@ -2099,7 +2151,7 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
 });
 
 // App version — keep in sync with sw.js VERSION (used in account sheet for verification)
-const APP_VERSION = 'v51';
+const APP_VERSION = 'v52';
 
 let currentUser = null;
 let dataReady = false;
