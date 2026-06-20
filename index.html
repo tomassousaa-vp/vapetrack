@@ -2151,7 +2151,7 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
 });
 
 // App version — keep in sync with sw.js VERSION (used in account sheet for verification)
-const APP_VERSION = 'v53';
+const APP_VERSION = 'v54';
 
 let currentUser = null;
 let dataReady = false;
@@ -2339,7 +2339,7 @@ function saleToDB(s) {
     customer: s.customer || '',
     units: totalUnits,             // legacy: total across items
     total_price: parseFloat(s.totalPrice) || 0,
-    status: dbStatusFromItems(items),
+    status: dbStatusFromItems(items, parseFloat(s.totalPrice) || 0),
     notes: s.notes || '',
     items: items,
     apply_promo: s.applyPromo === true,
@@ -2381,7 +2381,7 @@ function saleFromDB(row) {
     customer: row.customer || '',
     units: totalUnits,
     totalPrice: parseFloat(row.total_price) || 0,
-    status: deriveSaleStatus(items),  // derived from per-item paidUnits/method
+    status: deriveSaleStatus(items, parseFloat(row.total_price) || 0),  // by € when total known
     notes: row.notes || '',
     createdAt: row.created_at || '',
     applyPromo: row.apply_promo === true,
@@ -2391,10 +2391,10 @@ function saleFromDB(row) {
 // ── Partial-payment helpers ──────────────────────────────────────────────
 // A sale item is { flavor, model, units, paidUnits, method }. paidUnits∈[0,units];
 // `method` ('cash'|'mbway') applies to that item's PAID portion only. The rest is pending.
-// Canonical reader for an item's payments. An item now carries
-//   payments: [{ units, perUnit, method }]   (perUnit null ⇒ use sale average)
+// Canonical reader for an item's payments. Each payment is either
+//   { units, perUnit, method } — N vapes at a price (perUnit null ⇒ sale average), or
+//   { amount, method }         — a € value paid by that method (Divisão por valor).
 // Falls back to the legacy { paidUnits, method } shape so old data still works.
-// Always clamps the total paid units to the item's `units`.
 function itemPayments(i) {
   const units = parseInt(i.units) || 0;
   let raw;
@@ -2404,75 +2404,81 @@ function itemPayments(i) {
     const pu = Math.min(Math.max(parseInt(i.paidUnits) || 0, 0), units);
     raw = pu > 0 ? [{ units: pu, perUnit: null, method: i.method }] : [];
   }
-  let acc = 0;
   const out = [];
+  let unitAcc = 0;
   for (const p of raw) {
-    let u = Math.max(0, parseInt(p.units) || 0);
-    u = Math.min(u, Math.max(0, units - acc));
-    if (u <= 0) continue;
-    acc += u;
-    const perUnit = (p.perUnit === null || p.perUnit === undefined || p.perUnit === '')
-      ? null : (parseFloat(p.perUnit) || 0);
-    out.push({ units: u, perUnit, method: p.method === 'mbway' ? 'mbway' : 'cash' });
+    const method = p.method === 'mbway' ? 'mbway' : 'cash';
+    if (p.amount !== undefined && p.amount !== null && p.amount !== '') {
+      const amount = Math.max(0, parseFloat(p.amount) || 0);
+      if (amount > 0) out.push({ amount, method });
+    } else {
+      let u = Math.max(0, parseInt(p.units) || 0);
+      u = Math.min(u, Math.max(0, units - unitAcc));
+      if (u <= 0) continue;
+      unitAcc += u;
+      const perUnit = (p.perUnit === null || p.perUnit === undefined || p.perUnit === '')
+        ? null : (parseFloat(p.perUnit) || 0);
+      out.push({ units: u, perUnit, method });
+    }
   }
   return out;
 }
-function itemPaidUnits(i) { return itemPayments(i).reduce((s, p) => s + p.units, 0); }
-// Short "2💵·3📱" style summary of an item's paid units by method.
-function itemPaidSummaryShort(i) {
+// € value and (possibly fractional) unit-equivalent of one payment.
+function paymentAmount(p, avg) { return p.amount != null ? p.amount : p.units * (p.perUnit != null ? p.perUnit : avg); }
+function paymentUnits(p, avg)  { return p.units  != null ? p.units  : (avg > 0 ? p.amount / avg : 0); }
+function itemPaidAmount(i, avg) { return itemPayments(i).reduce((s, p) => s + paymentAmount(p, avg), 0); }
+function itemPaidUnits(i, avg)  { return itemPayments(i).reduce((s, p) => s + paymentUnits(p, avg), 0); }
+// Short "€7💵·€3📱" summary of an item's paid € by method.
+function itemPaidSummaryShort(i, avg) {
+  const r2 = n => Math.round(n * 100) / 100;
   const by = { cash: 0, mbway: 0 };
-  itemPayments(i).forEach(p => { by[p.method] += p.units; });
+  itemPayments(i).forEach(p => { by[p.method] += paymentAmount(p, avg || 0); });
   const parts = [];
-  if (by.cash  > 0) parts.push(by.cash  + '💵');
-  if (by.mbway > 0) parts.push(by.mbway + '📱');
+  if (by.cash  > 0.0001) parts.push('€' + r2(by.cash)  + '💵');
+  if (by.mbway > 0.0001) parts.push('€' + r2(by.mbway) + '📱');
   return parts.join('·');
 }
 
-function deriveSaleStatus(items) {
+// Status from items + (optional) sale total. With a total we judge "fully paid"
+// by € (robust for amount splits); without it we fall back to unit counts.
+function deriveSaleStatus(items, totalPrice) {
   const list = Array.isArray(items) ? items : [];
-  let total = 0, paid = 0;
+  let totalUnits = 0;
+  list.forEach(i => { totalUnits += parseInt(i.units) || 0; });
+  const avg = (totalPrice != null && totalPrice > 0 && totalUnits > 0) ? totalPrice / totalUnits : 0;
+  let paidAmt = 0, paidUnits = 0;
   const methods = new Set();
-  list.forEach(i => {
-    total += parseInt(i.units) || 0;
-    itemPayments(i).forEach(p => { paid += p.units; if (p.units > 0) methods.add(p.method); });
-  });
-  if (total <= 0 || paid <= 0) return 'pending';
-  if (paid < total) return 'partial';
-  return methods.size === 1 ? [...methods][0] : 'paidmixed'; // fully paid
+  list.forEach(i => itemPayments(i).forEach(p => {
+    const a = paymentAmount(p, avg);
+    paidAmt += a; paidUnits += paymentUnits(p, avg);
+    if (a > 0.0001) methods.add(p.method);
+  }));
+  if (totalUnits <= 0) return 'pending';
+  if (paidAmt <= 0.0001 && paidUnits <= 0.0001) return 'pending';
+  const fully = (totalPrice != null && totalPrice > 0)
+    ? paidAmt >= totalPrice - 0.01
+    : paidUnits >= totalUnits - 0.0001;
+  if (!fully) return 'partial';
+  return methods.size === 1 ? [...methods][0] : 'paidmixed';
 }
 // The DB `status` column only stores legacy enum values ('pending'|'cash'|'mbway')
 // to avoid any CHECK-constraint risk; the rich state lives in items[].
-function dbStatusFromItems(items) {
-  const st = deriveSaleStatus(items);
+function dbStatusFromItems(items, totalPrice) {
+  const st = deriveSaleStatus(items, totalPrice);
   return (st === 'cash' || st === 'mbway') ? st : 'pending';
 }
 function saleUnitPrice(s) {
   const u = s.units || 0;
   return u > 0 ? (s.totalPrice || 0) / u : 0;
 }
-function salePaidUnits(s) {
-  return (s.items || []).reduce((sum, i) => sum + itemPaidUnits(i), 0);
-}
-function salePendingUnits(s) {
-  return Math.max(0, (s.units || 0) - salePaidUnits(s));
-}
-// Paid € uses each payment's chosen perUnit (exact), falling back to the sale
-// average when perUnit is null (quick path / legacy). Pending = total − paid.
-function salePaidAmount(s) {
-  const avg = saleUnitPrice(s);
-  let amt = 0;
-  (s.items || []).forEach(i => itemPayments(i).forEach(p => {
-    amt += p.units * (p.perUnit != null ? p.perUnit : avg);
-  }));
-  return amt;
-}
+function salePaidUnits(s)   { const avg = saleUnitPrice(s); return (s.items || []).reduce((sum, i) => sum + itemPaidUnits(i, avg), 0); }
+function salePendingUnits(s){ return Math.max(0, (s.units || 0) - salePaidUnits(s)); }
+function salePaidAmount(s)  { const avg = saleUnitPrice(s); return (s.items || []).reduce((sum, i) => sum + itemPaidAmount(i, avg), 0); }
 function salePendingAmount(s) { return Math.max(0, (s.totalPrice || 0) - salePaidAmount(s)); }
 function salePaidByMethod(s) {
   const avg = saleUnitPrice(s);
   const out = { cash: 0, mbway: 0 };
-  (s.items || []).forEach(i => itemPayments(i).forEach(p => {
-    out[p.method] += p.units * (p.perUnit != null ? p.perUnit : avg);
-  }));
+  (s.items || []).forEach(i => itemPayments(i).forEach(p => { out[p.method] += paymentAmount(p, avg); }));
   return out;
 }
 
@@ -3135,12 +3141,14 @@ function computeHaulStats() {
     (sale.items || []).forEach(saleItem => {
       const key = (saleItem.flavor || '') + '|' + (saleItem.model || '');
       const itemUnits = parseInt(saleItem.units) || 0;
-      // Per-item partial payment: a queue with one entry per PAID unit holding its
-      // method ('cash'/'mbway'). Paid-first allocation as units drain across hauls.
-      const methodQueue = [];
-      itemPayments(saleItem).forEach(p => { for (let k = 0; k < p.units; k++) methodQueue.push(p.method); });
-      let paidRemaining = methodQueue.length;
-      let payIdx = 0;
+      // Per-item payment by € (paid-first). paidRemaining is the paid-unit equivalent
+      // (amount ÷ average price), so it may be fractional for partial-value payments.
+      // The method split is proportional to the item's cash/mbway € amounts.
+      const itemPaidAmt = itemPaidAmount(saleItem, pricePerUnit);
+      const itemByMethod = { cash: 0, mbway: 0 };
+      itemPayments(saleItem).forEach(p => { itemByMethod[p.method] += paymentAmount(p, pricePerUnit); });
+      const mbShare = itemPaidAmt > 0 ? itemByMethod.mbway / itemPaidAmt : 0;
+      let paidRemaining = pricePerUnit > 0 ? itemPaidAmt / pricePerUnit : 0;
       let unitsToAssign = itemUnits;
       for (const haul of haulsAsc) {
         if (unitsToAssign <= 0) break;
@@ -3166,12 +3174,11 @@ function computeHaulStats() {
           const paidContribution = paidTaken * pricePerUnit;
           stat.revenuePaid += paidContribution;
           stat.paidUnits += paidTaken;
-          // Split this paid chunk across methods, draining the per-unit queue.
-          let mbU = 0;
-          for (let k = 0; k < paidTaken; k++) { if (methodQueue[payIdx++] === 'mbway') mbU++; }
-          const cashU = paidTaken - mbU;
-          if (mbU   > 0) { stat.revenueMbway += mbU   * pricePerUnit; stat.mbwaySalesIds.add(sale.id); }
-          if (cashU > 0) { stat.revenueCash  += cashU * pricePerUnit; stat.cashSalesIds.add(sale.id); }
+          // Split this paid chunk across methods, proportional to the item's € split.
+          const mb = paidContribution * mbShare;
+          const cash = paidContribution - mb;
+          if (mb   > 0.0001) { stat.revenueMbway += mb;   stat.mbwaySalesIds.add(sale.id); }
+          if (cash > 0.0001) { stat.revenueCash  += cash; stat.cashSalesIds.add(sale.id); }
         }
         if (pendingTaken > 0) {
           stat.revenuePending += pendingTaken * pricePerUnit;
@@ -3796,9 +3803,10 @@ function addSaleItemRow(item) {
   item = item || { flavor:'', model:'', units:'' };
 
   const payments = itemPayments(item);
-  // Open the split editor when there are multiple payments or any chosen price.
-  const wantSplit = payments.length > 1 || payments.some(p => p.perUnit != null);
-  const quickPaid = payments.reduce((s, p) => s + p.units, 0);
+  // Open the Divisão editor when the item has a value split (multiple payments
+  // or any € / priced payment).
+  const wantSplit = payments.length > 1 || payments.some(p => p.amount != null || p.perUnit != null);
+  const quickPaid = payments.reduce((s, p) => s + (p.units || 0), 0);
   const quickMethod = payments[0] ? payments[0].method : 'cash';
 
   const wrap = document.getElementById('sale-items-wrap');
@@ -3826,7 +3834,7 @@ function addSaleItemRow(item) {
         <option value="mbway"${quickMethod === 'mbway' ? ' selected' : ''}>📱 MB Way</option>
       </select>
     </div>
-    <button type="button" class="sale-item-split-toggle" style="background:none;border:0;color:var(--accent);font:inherit;font-size:12px;font-weight:600;cursor:pointer;padding:4px 0;text-align:left;">⊟ Divisão por pagamento</button>
+    <button type="button" class="sale-item-split-toggle" style="background:none;border:0;color:var(--accent);font:inherit;font-size:12px;font-weight:600;cursor:pointer;padding:4px 0;text-align:left;">⊟ Dividir pagamento (€)</button>
     <div class="sale-item-splits" style="display:none;"></div>
     <div class="item-card-paysum"></div>
   `;
@@ -3837,65 +3845,30 @@ function addSaleItemRow(item) {
   card.querySelector('.sale-item-units').addEventListener('input', refreshPaySum);
   card.querySelector('.sale-item-paid').addEventListener('input', refreshPaySum);
   card.querySelector('.sale-item-method').addEventListener('change', () => { debouncedUpdateSaleTotals(); refreshPaySum(); });
-  card.querySelector('.sale-item-model').addEventListener('input', () => refreshSplitPrices(card));
   card.querySelector('.sale-item-split-toggle').addEventListener('click', () => toggleSplitMode(card));
   card.querySelector('.item-card-remove').addEventListener('click', () => removeSaleItemRow(card));
   if (wantSplit) toggleSplitMode(card, true);
   refreshPaySum();
 }
 
-// Distinct selling prices for a model in the CURRENT form (from the breakdown),
-// so the Divisão price selector can offer "€10 / €12". Falls back to the average.
-function salePriceOptionsForModel(model) {
-  const r2 = n => Math.round(n * 100) / 100;
-  const rows = [...document.querySelectorAll('#sale-items-wrap .item-card')].map(c => ({
-    flavor: c.querySelector('.sale-item-flavor').value.trim(),
-    model:  c.querySelector('.sale-item-model').value.trim(),
-    units:  parseInt(c.querySelector('.sale-item-units').value) || 0,
-  })).filter(it => (it.flavor || it.model) && it.units > 0);
-  const promoEl = document.getElementById('sale-apply-promo');
-  const applyPromo = !!(promoEl && promoEl.checked);
-  const prices = new Set();
-  try {
-    const bd = calcSaleBreakdown(rows, applyPromo);
-    bd.perModel.forEach(pm => { if (pm.model === model) pm.lines.forEach(l => prices.add(r2(l.perUnit))); });
-  } catch (e) {}
-  if (prices.size === 0) {
-    const totalUnits = rows.reduce((s, it) => s + it.units, 0);
-    const total = parseFloat(document.getElementById('sale-price')?.value) || 0;
-    if (totalUnits > 0 && total > 0) prices.add(r2(total / totalUnits));
-  }
-  return [...prices].sort((a, b) => a - b);
+// Average € per vape in the current form (sale total ÷ total vapes). Used to show
+// the per-item value and to convert quick "paid units" into € when opening Divisão.
+function formAvgPrice() {
+  const rows = [...document.querySelectorAll('#sale-items-wrap .item-card')];
+  const totalUnits = rows.reduce((s, c) => s + (parseInt(c.querySelector('.sale-item-units').value) || 0), 0);
+  const total = parseFloat(document.getElementById('sale-price')?.value) || 0;
+  return totalUnits > 0 ? total / totalUnits : 0;
 }
 
-function populateSplitPrice(select, model, selectedVal) {
-  const r2 = n => Math.round(n * 100) / 100;
-  const prices = salePriceOptionsForModel(model);
-  if (selectedVal != null && !prices.includes(r2(selectedVal))) prices.push(r2(selectedVal));
-  prices.sort((a, b) => a - b);
-  if (!prices.length) prices.push(0);
-  select.innerHTML = prices.map(p => `<option value="${p}"${(selectedVal != null && r2(selectedVal) === p) ? ' selected' : ''}>€${p.toFixed(2)}</option>`).join('');
-  if (selectedVal == null) select.value = String(prices[0]);
-}
-
-function refreshSplitPrices(card) {
-  const model = card.querySelector('.sale-item-model').value.trim();
-  card.querySelectorAll('.split-row').forEach(r => {
-    const sel = r.querySelector('.split-price');
-    const cur = sel.value ? parseFloat(sel.value) : null;
-    populateSplitPrice(sel, model, cur);
-  });
-}
-
+// A Divisão row: how much € was paid by a given method.
 function addSplitRow(card, rowsEl, pay) {
-  pay = pay || { units:'', perUnit:null, method:'cash' };
-  const model = card.querySelector('.sale-item-model').value.trim();
+  pay = pay || { amount:'', method:'cash' };
   const row = document.createElement('div');
   row.className = 'split-row';
   row.style.cssText = 'display:flex;gap:6px;align-items:center;margin-bottom:6px;';
+  const amtVal = (pay.amount != null && pay.amount !== '') ? pay.amount : '';
   row.innerHTML = `
-    <input class="field-input split-units" type="number" min="0" step="1" inputmode="numeric" placeholder="Vapes" value="${pay.units || ''}" style="flex:0 0 72px;">
-    <select class="field-input split-price" style="flex:1;min-width:0;"></select>
+    <input class="field-input split-amount" type="number" min="0" step="0.01" inputmode="decimal" placeholder="€ valor" value="${amtVal}" style="flex:1;min-width:0;">
     <select class="field-input split-method" style="flex:1;min-width:0;">
       <option value="cash"${pay.method !== 'mbway' ? ' selected' : ''}>💵 Dinheiro</option>
       <option value="mbway"${pay.method === 'mbway' ? ' selected' : ''}>📱 MB Way</option>
@@ -3903,11 +3876,9 @@ function addSplitRow(card, rowsEl, pay) {
     <button type="button" class="split-remove" aria-label="Remover pagamento" style="flex:0 0 auto;background:none;border:0;color:var(--text-subtle);font-size:20px;line-height:1;cursor:pointer;padding:0 4px;">×</button>
   `;
   rowsEl.appendChild(row);
-  populateSplitPrice(row.querySelector('.split-price'), model, pay.perUnit);
-  const refresh = () => { updateSaleItemPaySummary(card); debouncedUpdateSaleTotals(); };
-  row.querySelector('.split-units').addEventListener('input', refresh);
-  row.querySelector('.split-price').addEventListener('change', () => updateSaleItemPaySummary(card));
-  row.querySelector('.split-method').addEventListener('change', () => updateSaleItemPaySummary(card));
+  const refresh = () => updateSaleItemPaySummary(card);
+  row.querySelector('.split-amount').addEventListener('input', refresh);
+  row.querySelector('.split-method').addEventListener('change', refresh);
   row.querySelector('.split-remove').addEventListener('click', () => { row.remove(); refresh(); });
 }
 
@@ -3922,14 +3893,19 @@ function toggleSplitMode(card, forceOn) {
     toggle.textContent = '× Fechar divisão';
     if (!splits.querySelector('.split-rows')) {
       splits.innerHTML = `
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">Quanto foi pago em cada método (€):</div>
         <div class="split-rows"></div>
         <button type="button" class="split-add" style="background:none;border:1px dashed var(--border);border-radius:8px;color:var(--accent);font:inherit;font-size:12px;font-weight:600;cursor:pointer;padding:6px 10px;">+ Adicionar pagamento</button>`;
       const rowsEl = splits.querySelector('.split-rows');
-      let seed = (card._initialPayments && card._initialPayments.length) ? card._initialPayments : [];
+      const avg = formAvgPrice();
+      const r2 = n => Math.round(n * 100) / 100;
+      let seed = (card._initialPayments && card._initialPayments.length)
+        ? card._initialPayments.map(p => ({ amount: r2(paymentAmount(p, avg)), method: p.method }))
+        : [];
       if (!seed.length) {
         const qp = parseInt(card.querySelector('.sale-item-paid').value) || 0;
         const qm = card.querySelector('.sale-item-method').value === 'mbway' ? 'mbway' : 'cash';
-        seed = qp > 0 ? [{ units: qp, perUnit: null, method: qm }] : [{ units:'', perUnit:null, method:'cash' }];
+        seed = qp > 0 ? [{ amount: r2(qp * avg), method: qm }] : [{ amount:'', method:'cash' }];
       }
       seed.forEach(p => addSplitRow(card, rowsEl, p));
       splits.querySelector('.split-add').addEventListener('click', () => addSplitRow(card, rowsEl, null));
@@ -3937,23 +3913,22 @@ function toggleSplitMode(card, forceOn) {
   } else {
     splits.style.display = 'none';
     quick.style.display = '';
-    toggle.textContent = '⊟ Divisão por pagamento';
+    toggle.textContent = '⊟ Dividir pagamento (€)';
   }
   updateSaleItemPaySummary(card);
   debouncedUpdateSaleTotals();
 }
 
-// Read an item's payments from a card (split editor if open, else the quick path).
+// Read an item's payments from a card (Divisão € rows if open, else the quick path).
 function readItemPaymentsFromCard(card) {
   const splits = card.querySelector('.sale-item-splits');
   if (splits && splits.style.display !== 'none') {
     const out = [];
     splits.querySelectorAll('.split-row').forEach(r => {
-      const u = parseInt(r.querySelector('.split-units').value) || 0;
-      if (u <= 0) return;
-      const perUnit = parseFloat(r.querySelector('.split-price').value);
+      const amt = parseFloat(r.querySelector('.split-amount').value);
+      if (!(amt > 0)) return;
       const method = r.querySelector('.split-method').value === 'mbway' ? 'mbway' : 'cash';
-      out.push({ units: u, perUnit: isNaN(perUnit) ? null : perUnit, method });
+      out.push({ amount: amt, method });
     });
     return out;
   }
@@ -3963,31 +3938,34 @@ function readItemPaymentsFromCard(card) {
   return [{ units: paid, perUnit: null, method }];
 }
 
-// Live "X paga(s) (2💵·3📱) · Y pendente(s)" summary; clamps the quick paid input.
+// Live "€X pago (€a💵·€b📱) · €Y pendente" summary; clamps the quick paid input.
 function updateSaleItemPaySummary(card) {
   const units = parseInt(card.querySelector('.sale-item-units').value) || 0;
   const paidInp = card.querySelector('.sale-item-paid');
   if (paidInp) {
-    let paid = parseInt(paidInp.value) || 0;
-    if (paid < 0) { paidInp.value = ''; }
-    if (units > 0 && paid > units) { paidInp.value = String(units); }
+    const paid = parseInt(paidInp.value) || 0;
+    if (paid < 0) paidInp.value = '';
+    if (units > 0 && paid > units) paidInp.value = String(units);
   }
+  const avg = formAvgPrice();
   const payments = itemPayments({ units, payments: readItemPaymentsFromCard(card) });
-  const paid = payments.reduce((s, p) => s + p.units, 0);
-  const pending = Math.max(0, units - paid);
   const by = { cash: 0, mbway: 0 };
-  payments.forEach(p => { by[p.method] += p.units; });
+  let paidAmt = 0;
+  payments.forEach(p => { const a = paymentAmount(p, avg); paidAmt += a; by[p.method] += a; });
+  const itemValue = units * avg;
+  const pendAmt = Math.max(0, itemValue - paidAmt);
+  const e = n => '€' + (Math.round(n * 100) / 100).toFixed(2);
   const mparts = [];
-  if (by.cash  > 0) mparts.push(by.cash  + '💵');
-  if (by.mbway > 0) mparts.push(by.mbway + '📱');
+  if (by.cash  > 0.0001) mparts.push(e(by.cash)  + '💵');
+  if (by.mbway > 0.0001) mparts.push(e(by.mbway) + '📱');
   const sumEl = card.querySelector('.item-card-paysum');
   if (!sumEl) return;
-  if (paid <= 0) {
-    sumEl.textContent = units > 0 ? `${units} pendente(s)` : '';
+  if (paidAmt <= 0.0001) {
+    sumEl.textContent = itemValue > 0.005 ? `${e(itemValue)} pendente` : '';
     sumEl.style.color = 'var(--text-muted)';
   } else {
-    sumEl.textContent = `${paid} paga(s) (${mparts.join('·')})` + (pending > 0 ? ` · ${pending} pendente(s)` : '');
-    sumEl.style.color = pending > 0 ? '#fb923c' : 'var(--c-emerald)';
+    sumEl.textContent = `${e(paidAmt)} pago (${mparts.join('·')})` + (pendAmt > 0.005 ? ` · ${e(pendAmt)} pendente` : '');
+    sumEl.style.color = pendAmt > 0.005 ? '#fb923c' : 'var(--c-emerald)';
   }
 }
 
@@ -4220,7 +4198,7 @@ async function handleSaleSubmit(e) {
       customer,
       totalPrice: price,
       notes,
-      status: deriveSaleStatus(items),  // derived from per-item paid units/method
+      status: deriveSaleStatus(items, price),  // by € when total known
       applyPromo,
     };
 
@@ -4253,13 +4231,15 @@ async function markSalePaid(id, method) {
     const sale = getSales().find(s => s.id === id);
     if (!sale) return;
     const m = method === 'mbway' ? 'mbway' : 'cash';
-    // Keep any existing payments (e.g. a Divisão) and top up the remaining
-    // unpaid units with the chosen method.
+    // Keep any existing payments (e.g. a Divisão) and top up each item's remaining
+    // € (its units × average price minus what's already paid) with the chosen method.
+    const avg = saleUnitPrice(sale);
     const items = (sale.items || []).map(i => {
       const existing = itemPayments(i);
-      const paidU = existing.reduce((s, p) => s + p.units, 0);
-      const rest = Math.max(0, (parseInt(i.units) || 0) - paidU);
-      const payments = rest > 0 ? [...existing, { units: rest, perUnit: null, method: m }] : existing;
+      const itemVal = (parseInt(i.units) || 0) * avg;
+      const paid = existing.reduce((s, p) => s + paymentAmount(p, avg), 0);
+      const rest = Math.max(0, itemVal - paid);
+      const payments = rest > 0.0001 ? [...existing, { amount: Math.round(rest * 100) / 100, method: m }] : existing;
       return { flavor: i.flavor, model: i.model, units: i.units, payments };
     });
     await addOrUpdateSale({ ...sale, items });
@@ -4494,10 +4474,10 @@ function openHaulDetail(id) {
 
 function saleCard(s) {
   const status = s.status || 'pending';
-  const paidU = salePaidUnits(s);
-  const pendingU = salePendingUnits(s);
-  const hasPending = pendingU > 0;
-  const hasPaid = paidU > 0;
+  const paidAmt = salePaidAmount(s);
+  const pendAmt = salePendingAmount(s);
+  const hasPending = pendAmt > 0.005;
+  const hasPaid = paidAmt > 0.005;
   const amountColor = status === 'pending' ? 'yellow'
                     : status === 'partial' ? 'orange'
                     : status === 'cash'    ? 'green'
@@ -4522,8 +4502,10 @@ function saleCard(s) {
   const byM = salePaidByMethod(s);
   let paySummary = '';
   if (hasPaid && hasPending) {
-    const methods = (byM.cash > 0 ? '💵' : '') + (byM.mbway > 0 ? '📱' : '');
-    paySummary = `<div class="list-item-meta"><span style="color:#fb923c;font-weight:600;">${paidU} paga(s) ${methods} · ${pendingU} pendente(s)</span></div>`;
+    const mparts = [];
+    if (byM.cash  > 0.005) mparts.push(fmt(byM.cash)  + ' 💵');
+    if (byM.mbway > 0.005) mparts.push(fmt(byM.mbway) + ' 📱');
+    paySummary = `<div class="list-item-meta"><span style="color:#fb923c;font-weight:600;">${fmt(paidAmt)} pago (${mparts.join(' · ')}) · ${fmt(pendAmt)} pendente</span></div>`;
   }
 
   return `<div class="list-item ${hasPending ? 'pending' : ''}">
@@ -4553,11 +4535,11 @@ function saleCard(s) {
     </div>
     ${paySummary}
     <div style="display:flex;gap:4px;flex-wrap:wrap;">
-      ${(s.items || []).map(it => {
-        const summary = itemPaidSummaryShort(it);
+      ${(() => { const avg = saleUnitPrice(s); return (s.items || []).map(it => {
+        const summary = itemPaidSummaryShort(it, avg);
         const tag = summary ? ` · ${summary}` : '';
         return `<span class="badge badge-purple">${escapeHtml(it.flavor || '?')}${it.model ? ' · ' + escapeHtml(it.model) : ''} · ${it.units}v${tag}</span>`;
-      }).join('')}
+      }).join(''); })()}
     </div>
     ${s.customer ? `<div class="list-item-meta"><span>👤 <strong>${escapeHtml(s.customer)}</strong></span></div>` : ''}
     ${s.notes ? `<div class="list-item-notes">${escapeHtml(s.notes)}</div>` : ''}
@@ -5371,8 +5353,8 @@ function dayCard(d) {
 function openDayDetail(dateStr) {
   const sales = getSales().filter(s => (s.date || 'sem-data') === dateStr);
   const sorted = sales.slice().sort((a, b) => {
-    const aP = salePendingUnits(a) > 0 ? 0 : 1;  // anything still owed first
-    const bP = salePendingUnits(b) > 0 ? 0 : 1;
+    const aP = salePendingAmount(a) > 0.005 ? 0 : 1;  // anything still owed first
+    const bP = salePendingAmount(b) > 0.005 ? 0 : 1;
     return aP - bP;
   });
   let units = 0, revenue = 0, pending = 0;
@@ -5698,12 +5680,14 @@ function exportSalesAsCSV() {
   const escapeCsv = v => `"${String(v == null ? '' : v).replace(/\r?\n/g, ' ').replace(/"/g, '""')}"`;
   const lines = [headers.join(',')];
   sales.forEach(s => {
+    const avg = saleUnitPrice(s);
     const itemsTxt = (s.items || []).map(i => {
       const byM = { cash: 0, mbway: 0 };
-      itemPayments(i).forEach(p => { byM[p.method] += p.units; });
+      itemPayments(i).forEach(p => { byM[p.method] += paymentAmount(p, avg); });
+      const r2 = n => Math.round(n * 100) / 100;
       const parts = [];
-      if (byM.cash  > 0) parts.push(`${byM.cash} Dinheiro`);
-      if (byM.mbway > 0) parts.push(`${byM.mbway} MBWay`);
+      if (byM.cash  > 0.005) parts.push(`€${r2(byM.cash)} Dinheiro`);
+      if (byM.mbway > 0.005) parts.push(`€${r2(byM.mbway)} MBWay`);
       const paidTxt = parts.length ? ` [pg ${parts.join(' + ')}]` : '';
       return `${i.units}x ${i.flavor}${i.model ? ' (' + i.model + ')' : ''}${paidTxt}`;
     }).join(' | ');
