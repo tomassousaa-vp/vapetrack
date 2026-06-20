@@ -2151,7 +2151,7 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
 });
 
 // App version — keep in sync with sw.js VERSION (used in account sheet for verification)
-const APP_VERSION = 'v52';
+const APP_VERSION = 'v53';
 
 let currentUser = null;
 let dataReady = false;
@@ -2320,18 +2320,14 @@ function saleToDB(s) {
             : (s.flavor || s.model || s.units)
               ? [{ flavor: s.flavor || '', model: s.model || '', units: parseInt(s.units) || 0 }]
               : [];
-  // Normalize (keep per-item payment fields: paidUnits + method)
-  items = items.map(i => {
-    const units = parseInt(i.units) || 0;
-    const paidUnits = Math.min(Math.max(parseInt(i.paidUnits) || 0, 0), units);
-    return {
-      flavor: (i.flavor || '').trim(),
-      model:  (i.model  || '').trim(),
-      units,
-      paidUnits,
-      method: i.method === 'mbway' ? 'mbway' : 'cash',
-    };
-  }).filter(i => i.units > 0);
+  // Normalize. Each item carries payments: [{ units, perUnit, method }].
+  // itemPayments() handles the new shape AND the legacy { paidUnits, method }.
+  items = items.map(i => ({
+    flavor:   (i.flavor || '').trim(),
+    model:    (i.model  || '').trim(),
+    units:    parseInt(i.units) || 0,
+    payments: itemPayments(i),
+  })).filter(i => i.units > 0);
 
   const totalUnits = items.reduce((sum, i) => sum + i.units, 0);
   const first = items[0] || { flavor: '', model: '' };
@@ -2364,15 +2360,16 @@ function saleFromDB(row) {
   const legacyMethod = (row.status === 'cash' || row.status === 'mbway') ? row.status : null;
   items = items.map(i => {
     const units = parseInt(i.units) || 0;
-    let paidUnits, method;
-    if (i.paidUnits === undefined || i.paidUnits === null) {
-      paidUnits = legacyMethod ? units : 0;
-      method = legacyMethod || 'cash';
+    let payments;
+    if (Array.isArray(i.payments)) {
+      payments = itemPayments({ units, payments: i.payments });
+    } else if (i.paidUnits !== undefined && i.paidUnits !== null) {
+      payments = itemPayments({ units, paidUnits: i.paidUnits, method: i.method });
     } else {
-      paidUnits = Math.min(Math.max(parseInt(i.paidUnits) || 0, 0), units);
-      method = i.method === 'mbway' ? 'mbway' : 'cash';
+      // very old rows: a fully cash/mbway sale ⇒ every unit paid with that method
+      payments = legacyMethod ? [{ units, perUnit: null, method: legacyMethod }] : [];
     }
-    return { flavor: i.flavor || '', model: i.model || '', units, paidUnits, method };
+    return { flavor: i.flavor || '', model: i.model || '', units, payments };
   });
   const totalUnits = items.reduce((sum, i) => sum + i.units, 0);
   return {
@@ -2394,15 +2391,50 @@ function saleFromDB(row) {
 // ── Partial-payment helpers ──────────────────────────────────────────────
 // A sale item is { flavor, model, units, paidUnits, method }. paidUnits∈[0,units];
 // `method` ('cash'|'mbway') applies to that item's PAID portion only. The rest is pending.
+// Canonical reader for an item's payments. An item now carries
+//   payments: [{ units, perUnit, method }]   (perUnit null ⇒ use sale average)
+// Falls back to the legacy { paidUnits, method } shape so old data still works.
+// Always clamps the total paid units to the item's `units`.
+function itemPayments(i) {
+  const units = parseInt(i.units) || 0;
+  let raw;
+  if (Array.isArray(i.payments)) {
+    raw = i.payments;
+  } else {
+    const pu = Math.min(Math.max(parseInt(i.paidUnits) || 0, 0), units);
+    raw = pu > 0 ? [{ units: pu, perUnit: null, method: i.method }] : [];
+  }
+  let acc = 0;
+  const out = [];
+  for (const p of raw) {
+    let u = Math.max(0, parseInt(p.units) || 0);
+    u = Math.min(u, Math.max(0, units - acc));
+    if (u <= 0) continue;
+    acc += u;
+    const perUnit = (p.perUnit === null || p.perUnit === undefined || p.perUnit === '')
+      ? null : (parseFloat(p.perUnit) || 0);
+    out.push({ units: u, perUnit, method: p.method === 'mbway' ? 'mbway' : 'cash' });
+  }
+  return out;
+}
+function itemPaidUnits(i) { return itemPayments(i).reduce((s, p) => s + p.units, 0); }
+// Short "2💵·3📱" style summary of an item's paid units by method.
+function itemPaidSummaryShort(i) {
+  const by = { cash: 0, mbway: 0 };
+  itemPayments(i).forEach(p => { by[p.method] += p.units; });
+  const parts = [];
+  if (by.cash  > 0) parts.push(by.cash  + '💵');
+  if (by.mbway > 0) parts.push(by.mbway + '📱');
+  return parts.join('·');
+}
+
 function deriveSaleStatus(items) {
   const list = Array.isArray(items) ? items : [];
   let total = 0, paid = 0;
   const methods = new Set();
   list.forEach(i => {
-    const u = parseInt(i.units) || 0;
-    const p = Math.min(Math.max(parseInt(i.paidUnits) || 0, 0), u);
-    total += u; paid += p;
-    if (p > 0) methods.add(i.method === 'mbway' ? 'mbway' : 'cash');
+    total += parseInt(i.units) || 0;
+    itemPayments(i).forEach(p => { paid += p.units; if (p.units > 0) methods.add(p.method); });
   });
   if (total <= 0 || paid <= 0) return 'pending';
   if (paid < total) return 'partial';
@@ -2419,24 +2451,28 @@ function saleUnitPrice(s) {
   return u > 0 ? (s.totalPrice || 0) / u : 0;
 }
 function salePaidUnits(s) {
-  return (s.items || []).reduce((sum, i) => {
-    const u = parseInt(i.units) || 0;
-    return sum + Math.min(Math.max(parseInt(i.paidUnits) || 0, 0), u);
-  }, 0);
+  return (s.items || []).reduce((sum, i) => sum + itemPaidUnits(i), 0);
 }
 function salePendingUnits(s) {
   return Math.max(0, (s.units || 0) - salePaidUnits(s));
 }
-function salePaidAmount(s)    { return salePaidUnits(s)    * saleUnitPrice(s); }
-function salePendingAmount(s) { return salePendingUnits(s) * saleUnitPrice(s); }
+// Paid € uses each payment's chosen perUnit (exact), falling back to the sale
+// average when perUnit is null (quick path / legacy). Pending = total − paid.
+function salePaidAmount(s) {
+  const avg = saleUnitPrice(s);
+  let amt = 0;
+  (s.items || []).forEach(i => itemPayments(i).forEach(p => {
+    amt += p.units * (p.perUnit != null ? p.perUnit : avg);
+  }));
+  return amt;
+}
+function salePendingAmount(s) { return Math.max(0, (s.totalPrice || 0) - salePaidAmount(s)); }
 function salePaidByMethod(s) {
-  const up = saleUnitPrice(s);
+  const avg = saleUnitPrice(s);
   const out = { cash: 0, mbway: 0 };
-  (s.items || []).forEach(i => {
-    const u = parseInt(i.units) || 0;
-    const p = Math.min(Math.max(parseInt(i.paidUnits) || 0, 0), u);
-    if (p > 0) out[i.method === 'mbway' ? 'mbway' : 'cash'] += p * up;
-  });
+  (s.items || []).forEach(i => itemPayments(i).forEach(p => {
+    out[p.method] += p.units * (p.perUnit != null ? p.perUnit : avg);
+  }));
   return out;
 }
 
@@ -3099,10 +3135,12 @@ function computeHaulStats() {
     (sale.items || []).forEach(saleItem => {
       const key = (saleItem.flavor || '') + '|' + (saleItem.model || '');
       const itemUnits = parseInt(saleItem.units) || 0;
-      const itemMethod = saleItem.method === 'mbway' ? 'mbway' : 'cash';
-      // Per-item partial payment: first `paidRemaining` units of this item are paid
-      // (paid-first allocation), the rest are pending.
-      let paidRemaining = Math.min(Math.max(parseInt(saleItem.paidUnits) || 0, 0), itemUnits);
+      // Per-item partial payment: a queue with one entry per PAID unit holding its
+      // method ('cash'/'mbway'). Paid-first allocation as units drain across hauls.
+      const methodQueue = [];
+      itemPayments(saleItem).forEach(p => { for (let k = 0; k < p.units; k++) methodQueue.push(p.method); });
+      let paidRemaining = methodQueue.length;
+      let payIdx = 0;
       let unitsToAssign = itemUnits;
       for (const haul of haulsAsc) {
         if (unitsToAssign <= 0) break;
@@ -3128,8 +3166,12 @@ function computeHaulStats() {
           const paidContribution = paidTaken * pricePerUnit;
           stat.revenuePaid += paidContribution;
           stat.paidUnits += paidTaken;
-          if (itemMethod === 'mbway') { stat.revenueMbway += paidContribution; stat.mbwaySalesIds.add(sale.id); }
-          else                       { stat.revenueCash  += paidContribution; stat.cashSalesIds.add(sale.id); }
+          // Split this paid chunk across methods, draining the per-unit queue.
+          let mbU = 0;
+          for (let k = 0; k < paidTaken; k++) { if (methodQueue[payIdx++] === 'mbway') mbU++; }
+          const cashU = paidTaken - mbU;
+          if (mbU   > 0) { stat.revenueMbway += mbU   * pricePerUnit; stat.mbwaySalesIds.add(sale.id); }
+          if (cashU > 0) { stat.revenueCash  += cashU * pricePerUnit; stat.cashSalesIds.add(sale.id); }
         }
         if (pendingTaken > 0) {
           stat.revenuePending += pendingTaken * pricePerUnit;
@@ -3753,11 +3795,18 @@ function addSaleItemRow(item) {
   if (item instanceof Event) item = null;
   item = item || { flavor:'', model:'', units:'' };
 
+  const payments = itemPayments(item);
+  // Open the split editor when there are multiple payments or any chosen price.
+  const wantSplit = payments.length > 1 || payments.some(p => p.perUnit != null);
+  const quickPaid = payments.reduce((s, p) => s + p.units, 0);
+  const quickMethod = payments[0] ? payments[0].method : 'cash';
+
   const wrap = document.getElementById('sale-items-wrap');
   const idx = wrap.children.length + 1;
 
   const card = document.createElement('div');
   card.className = 'item-card';
+  card._initialPayments = payments;
   card.innerHTML = `
     <div class="item-card-num">${idx}</div>
     <div class="item-card-grid">
@@ -3771,42 +3820,173 @@ function addSaleItemRow(item) {
       </button>
     </div>
     <div class="item-card-pay">
-      <input class="field-input sale-item-paid" type="number" min="0" step="1" inputmode="numeric" placeholder="Já pagas" value="${item.paidUnits ? item.paidUnits : ''}">
+      <input class="field-input sale-item-paid" type="number" min="0" step="1" inputmode="numeric" placeholder="Já pagas" value="${quickPaid || ''}">
       <select class="field-input sale-item-method">
-        <option value="cash"${(item.method || 'cash') === 'cash' ? ' selected' : ''}>💵 Dinheiro</option>
-        <option value="mbway"${item.method === 'mbway' ? ' selected' : ''}>📱 MB Way</option>
+        <option value="cash"${quickMethod !== 'mbway' ? ' selected' : ''}>💵 Dinheiro</option>
+        <option value="mbway"${quickMethod === 'mbway' ? ' selected' : ''}>📱 MB Way</option>
       </select>
     </div>
+    <button type="button" class="sale-item-split-toggle" style="background:none;border:0;color:var(--accent);font:inherit;font-size:12px;font-weight:600;cursor:pointer;padding:4px 0;text-align:left;">⊟ Divisão por pagamento</button>
+    <div class="sale-item-splits" style="display:none;"></div>
     <div class="item-card-paysum"></div>
   `;
   wrap.appendChild(card);
 
-  card.querySelectorAll('input').forEach(inp => inp.addEventListener('input', debouncedUpdateSaleTotals));
+  card.querySelectorAll('.item-card-grid input, .sale-item-units').forEach(inp => inp.addEventListener('input', debouncedUpdateSaleTotals));
   const refreshPaySum = () => updateSaleItemPaySummary(card);
   card.querySelector('.sale-item-units').addEventListener('input', refreshPaySum);
   card.querySelector('.sale-item-paid').addEventListener('input', refreshPaySum);
   card.querySelector('.sale-item-method').addEventListener('change', () => { debouncedUpdateSaleTotals(); refreshPaySum(); });
+  card.querySelector('.sale-item-model').addEventListener('input', () => refreshSplitPrices(card));
+  card.querySelector('.sale-item-split-toggle').addEventListener('click', () => toggleSplitMode(card));
   card.querySelector('.item-card-remove').addEventListener('click', () => removeSaleItemRow(card));
+  if (wantSplit) toggleSplitMode(card, true);
   refreshPaySum();
 }
 
-// Live "X paga(s) · Y pendente(s)" summary under an item row; also clamps paid≤units.
+// Distinct selling prices for a model in the CURRENT form (from the breakdown),
+// so the Divisão price selector can offer "€10 / €12". Falls back to the average.
+function salePriceOptionsForModel(model) {
+  const r2 = n => Math.round(n * 100) / 100;
+  const rows = [...document.querySelectorAll('#sale-items-wrap .item-card')].map(c => ({
+    flavor: c.querySelector('.sale-item-flavor').value.trim(),
+    model:  c.querySelector('.sale-item-model').value.trim(),
+    units:  parseInt(c.querySelector('.sale-item-units').value) || 0,
+  })).filter(it => (it.flavor || it.model) && it.units > 0);
+  const promoEl = document.getElementById('sale-apply-promo');
+  const applyPromo = !!(promoEl && promoEl.checked);
+  const prices = new Set();
+  try {
+    const bd = calcSaleBreakdown(rows, applyPromo);
+    bd.perModel.forEach(pm => { if (pm.model === model) pm.lines.forEach(l => prices.add(r2(l.perUnit))); });
+  } catch (e) {}
+  if (prices.size === 0) {
+    const totalUnits = rows.reduce((s, it) => s + it.units, 0);
+    const total = parseFloat(document.getElementById('sale-price')?.value) || 0;
+    if (totalUnits > 0 && total > 0) prices.add(r2(total / totalUnits));
+  }
+  return [...prices].sort((a, b) => a - b);
+}
+
+function populateSplitPrice(select, model, selectedVal) {
+  const r2 = n => Math.round(n * 100) / 100;
+  const prices = salePriceOptionsForModel(model);
+  if (selectedVal != null && !prices.includes(r2(selectedVal))) prices.push(r2(selectedVal));
+  prices.sort((a, b) => a - b);
+  if (!prices.length) prices.push(0);
+  select.innerHTML = prices.map(p => `<option value="${p}"${(selectedVal != null && r2(selectedVal) === p) ? ' selected' : ''}>€${p.toFixed(2)}</option>`).join('');
+  if (selectedVal == null) select.value = String(prices[0]);
+}
+
+function refreshSplitPrices(card) {
+  const model = card.querySelector('.sale-item-model').value.trim();
+  card.querySelectorAll('.split-row').forEach(r => {
+    const sel = r.querySelector('.split-price');
+    const cur = sel.value ? parseFloat(sel.value) : null;
+    populateSplitPrice(sel, model, cur);
+  });
+}
+
+function addSplitRow(card, rowsEl, pay) {
+  pay = pay || { units:'', perUnit:null, method:'cash' };
+  const model = card.querySelector('.sale-item-model').value.trim();
+  const row = document.createElement('div');
+  row.className = 'split-row';
+  row.style.cssText = 'display:flex;gap:6px;align-items:center;margin-bottom:6px;';
+  row.innerHTML = `
+    <input class="field-input split-units" type="number" min="0" step="1" inputmode="numeric" placeholder="Vapes" value="${pay.units || ''}" style="flex:0 0 72px;">
+    <select class="field-input split-price" style="flex:1;min-width:0;"></select>
+    <select class="field-input split-method" style="flex:1;min-width:0;">
+      <option value="cash"${pay.method !== 'mbway' ? ' selected' : ''}>💵 Dinheiro</option>
+      <option value="mbway"${pay.method === 'mbway' ? ' selected' : ''}>📱 MB Way</option>
+    </select>
+    <button type="button" class="split-remove" aria-label="Remover pagamento" style="flex:0 0 auto;background:none;border:0;color:var(--text-subtle);font-size:20px;line-height:1;cursor:pointer;padding:0 4px;">×</button>
+  `;
+  rowsEl.appendChild(row);
+  populateSplitPrice(row.querySelector('.split-price'), model, pay.perUnit);
+  const refresh = () => { updateSaleItemPaySummary(card); debouncedUpdateSaleTotals(); };
+  row.querySelector('.split-units').addEventListener('input', refresh);
+  row.querySelector('.split-price').addEventListener('change', () => updateSaleItemPaySummary(card));
+  row.querySelector('.split-method').addEventListener('change', () => updateSaleItemPaySummary(card));
+  row.querySelector('.split-remove').addEventListener('click', () => { row.remove(); refresh(); });
+}
+
+function toggleSplitMode(card, forceOn) {
+  const splits = card.querySelector('.sale-item-splits');
+  const quick  = card.querySelector('.item-card-pay');
+  const toggle = card.querySelector('.sale-item-split-toggle');
+  const turnOn = forceOn === true ? true : (splits.style.display === 'none');
+  if (turnOn) {
+    splits.style.display = '';
+    quick.style.display = 'none';
+    toggle.textContent = '× Fechar divisão';
+    if (!splits.querySelector('.split-rows')) {
+      splits.innerHTML = `
+        <div class="split-rows"></div>
+        <button type="button" class="split-add" style="background:none;border:1px dashed var(--border);border-radius:8px;color:var(--accent);font:inherit;font-size:12px;font-weight:600;cursor:pointer;padding:6px 10px;">+ Adicionar pagamento</button>`;
+      const rowsEl = splits.querySelector('.split-rows');
+      let seed = (card._initialPayments && card._initialPayments.length) ? card._initialPayments : [];
+      if (!seed.length) {
+        const qp = parseInt(card.querySelector('.sale-item-paid').value) || 0;
+        const qm = card.querySelector('.sale-item-method').value === 'mbway' ? 'mbway' : 'cash';
+        seed = qp > 0 ? [{ units: qp, perUnit: null, method: qm }] : [{ units:'', perUnit:null, method:'cash' }];
+      }
+      seed.forEach(p => addSplitRow(card, rowsEl, p));
+      splits.querySelector('.split-add').addEventListener('click', () => addSplitRow(card, rowsEl, null));
+    }
+  } else {
+    splits.style.display = 'none';
+    quick.style.display = '';
+    toggle.textContent = '⊟ Divisão por pagamento';
+  }
+  updateSaleItemPaySummary(card);
+  debouncedUpdateSaleTotals();
+}
+
+// Read an item's payments from a card (split editor if open, else the quick path).
+function readItemPaymentsFromCard(card) {
+  const splits = card.querySelector('.sale-item-splits');
+  if (splits && splits.style.display !== 'none') {
+    const out = [];
+    splits.querySelectorAll('.split-row').forEach(r => {
+      const u = parseInt(r.querySelector('.split-units').value) || 0;
+      if (u <= 0) return;
+      const perUnit = parseFloat(r.querySelector('.split-price').value);
+      const method = r.querySelector('.split-method').value === 'mbway' ? 'mbway' : 'cash';
+      out.push({ units: u, perUnit: isNaN(perUnit) ? null : perUnit, method });
+    });
+    return out;
+  }
+  const paid = parseInt(card.querySelector('.sale-item-paid')?.value) || 0;
+  if (paid <= 0) return [];
+  const method = card.querySelector('.sale-item-method')?.value === 'mbway' ? 'mbway' : 'cash';
+  return [{ units: paid, perUnit: null, method }];
+}
+
+// Live "X paga(s) (2💵·3📱) · Y pendente(s)" summary; clamps the quick paid input.
 function updateSaleItemPaySummary(card) {
   const units = parseInt(card.querySelector('.sale-item-units').value) || 0;
   const paidInp = card.querySelector('.sale-item-paid');
-  let paid = parseInt(paidInp.value) || 0;
-  if (paid < 0) { paid = 0; paidInp.value = ''; }
-  if (units > 0 && paid > units) { paid = units; paidInp.value = String(units); }
-  const method = card.querySelector('.sale-item-method').value === 'mbway' ? 'mbway' : 'cash';
+  if (paidInp) {
+    let paid = parseInt(paidInp.value) || 0;
+    if (paid < 0) { paidInp.value = ''; }
+    if (units > 0 && paid > units) { paidInp.value = String(units); }
+  }
+  const payments = itemPayments({ units, payments: readItemPaymentsFromCard(card) });
+  const paid = payments.reduce((s, p) => s + p.units, 0);
+  const pending = Math.max(0, units - paid);
+  const by = { cash: 0, mbway: 0 };
+  payments.forEach(p => { by[p.method] += p.units; });
+  const mparts = [];
+  if (by.cash  > 0) mparts.push(by.cash  + '💵');
+  if (by.mbway > 0) mparts.push(by.mbway + '📱');
   const sumEl = card.querySelector('.item-card-paysum');
   if (!sumEl) return;
-  const pending = Math.max(0, units - paid);
   if (paid <= 0) {
     sumEl.textContent = units > 0 ? `${units} pendente(s)` : '';
     sumEl.style.color = 'var(--text-muted)';
   } else {
-    const mlabel = method === 'mbway' ? 'MB Way' : 'Dinheiro';
-    sumEl.textContent = `${paid} paga(s) (${mlabel})` + (pending > 0 ? ` · ${pending} pendente(s)` : '');
+    sumEl.textContent = `${paid} paga(s) (${mparts.join('·')})` + (pending > 0 ? ` · ${pending} pendente(s)` : '');
     sumEl.style.color = pending > 0 ? '#fb923c' : 'var(--c-emerald)';
   }
 }
@@ -3830,10 +4010,8 @@ function readSaleItemRows() {
     const model  = row.querySelector('.sale-item-model').value.trim();
     const units  = parseInt(row.querySelector('.sale-item-units').value);
     if ((flavor || model) && units > 0) {
-      let paidUnits = parseInt(row.querySelector('.sale-item-paid')?.value) || 0;
-      paidUnits = Math.min(Math.max(paidUnits, 0), units);
-      const method = row.querySelector('.sale-item-method')?.value === 'mbway' ? 'mbway' : 'cash';
-      items.push({ flavor, model, units, paidUnits, method });
+      const payments = itemPayments({ units, payments: readItemPaymentsFromCard(row) });
+      items.push({ flavor, model, units, payments });
     }
   });
   return items;
@@ -4075,9 +4253,15 @@ async function markSalePaid(id, method) {
     const sale = getSales().find(s => s.id === id);
     if (!sale) return;
     const m = method === 'mbway' ? 'mbway' : 'cash';
-    const items = (sale.items || []).map(i => ({
-      flavor: i.flavor, model: i.model, units: i.units, paidUnits: i.units, method: m,
-    }));
+    // Keep any existing payments (e.g. a Divisão) and top up the remaining
+    // unpaid units with the chosen method.
+    const items = (sale.items || []).map(i => {
+      const existing = itemPayments(i);
+      const paidU = existing.reduce((s, p) => s + p.units, 0);
+      const rest = Math.max(0, (parseInt(i.units) || 0) - paidU);
+      const payments = rest > 0 ? [...existing, { units: rest, perUnit: null, method: m }] : existing;
+      return { flavor: i.flavor, model: i.model, units: i.units, payments };
+    });
     await addOrUpdateSale({ ...sale, items });
     refreshAll();
     showToast(`Pago em ${STATUS[m].label} ✓`, 'success');
@@ -4092,7 +4276,7 @@ async function markSalePending(id) {
     const sale = getSales().find(s => s.id === id);
     if (!sale) return;
     const items = (sale.items || []).map(i => ({
-      flavor: i.flavor, model: i.model, units: i.units, paidUnits: 0, method: i.method || 'cash',
+      flavor: i.flavor, model: i.model, units: i.units, payments: [],
     }));
     await addOrUpdateSale({ ...sale, items });
     refreshAll();
@@ -4370,8 +4554,8 @@ function saleCard(s) {
     ${paySummary}
     <div style="display:flex;gap:4px;flex-wrap:wrap;">
       ${(s.items || []).map(it => {
-        const pu = Math.min(Math.max(parseInt(it.paidUnits) || 0, 0), parseInt(it.units) || 0);
-        const tag = pu > 0 ? ` · ${pu}${it.method === 'mbway' ? '📱' : '💵'}` : '';
+        const summary = itemPaidSummaryShort(it);
+        const tag = summary ? ` · ${summary}` : '';
         return `<span class="badge badge-purple">${escapeHtml(it.flavor || '?')}${it.model ? ' · ' + escapeHtml(it.model) : ''} · ${it.units}v${tag}</span>`;
       }).join('')}
     </div>
@@ -5515,8 +5699,12 @@ function exportSalesAsCSV() {
   const lines = [headers.join(',')];
   sales.forEach(s => {
     const itemsTxt = (s.items || []).map(i => {
-      const pu = Math.min(Math.max(parseInt(i.paidUnits) || 0, 0), parseInt(i.units) || 0);
-      const paidTxt = pu > 0 ? ` [${pu} pg ${i.method === 'mbway' ? 'MBWay' : 'Dinheiro'}]` : '';
+      const byM = { cash: 0, mbway: 0 };
+      itemPayments(i).forEach(p => { byM[p.method] += p.units; });
+      const parts = [];
+      if (byM.cash  > 0) parts.push(`${byM.cash} Dinheiro`);
+      if (byM.mbway > 0) parts.push(`${byM.mbway} MBWay`);
+      const paidTxt = parts.length ? ` [pg ${parts.join(' + ')}]` : '';
       return `${i.units}x ${i.flavor}${i.model ? ' (' + i.model + ')' : ''}${paidTxt}`;
     }).join(' | ');
     const status = (STATUS[s.status] && STATUS[s.status].label) || 'Pendente';
