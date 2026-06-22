@@ -2151,7 +2151,7 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
 });
 
 // App version — keep in sync with sw.js VERSION (used in account sheet for verification)
-const APP_VERSION = 'v54';
+const APP_VERSION = 'v55';
 
 let currentUser = null;
 let dataReady = false;
@@ -2471,16 +2471,68 @@ function saleUnitPrice(s) {
   const u = s.units || 0;
   return u > 0 ? (s.totalPrice || 0) / u : 0;
 }
+
+// ── Valorização por PREÇO REAL (nunca média) ──────────────────────────────
+// Cada vape de uma venda tem o seu preço de escalão real (ex.: €10 ou €12),
+// obtido do breakdown de preços. Pagamentos "Já pagas N" (sem preço) consomem
+// PRIMEIRO os vapes mais baratos — por isso os que ficam pendentes são os mais
+// caros (€12), tal como o cliente costuma pagar. Isto evita médias como €10,67
+// e mantém todos os valores redondos.
+function priceSale(s) {
+  const items = (s && s.items) || [];
+  const totalUnits = (s && s.units != null ? s.units
+                      : items.reduce((a, i) => a + (parseInt(i.units) || 0), 0)) || 0;
+  const saleTotal = parseFloat(s && s.totalPrice) || 0;
+
+  // Pool de preços reais por modelo (do breakdown de escalões), ascendente.
+  let pool = {};
+  try {
+    const bd = calcSaleBreakdown(items, s && s.applyPromo === true, (s && s.id) || null);
+    if (bd && bd.total > 0 && Math.abs(bd.total - saleTotal) < 0.5) {
+      bd.perModel.forEach(pm => {
+        const arr = pool[pm.model] = pool[pm.model] || [];
+        pm.lines.forEach(l => { const u = Math.round(l.units) || 0; for (let k = 0; k < u; k++) arr.push(l.perUnit); });
+      });
+      Object.values(pool).forEach(a => a.sort((x, y) => x - y));
+    } else {
+      pool = null; // preço manual/promo: sem escalões fiáveis
+    }
+  } catch (e) { pool = null; }
+
+  const evenly = totalUnits > 0 ? saleTotal / totalUnits : 0;
+  const perItem = items.map(i => {
+    const units = parseInt(i.units) || 0;
+    const prices = [];
+    const p = pool && pool[i.model];
+    for (let k = 0; k < units; k++) prices.push(p && p.length ? p.shift() : evenly);
+    // Valorizar pagamentos. Unidades sem preço explícito tomam os vapes mais baratos.
+    const queue = prices.slice();
+    const by = { cash: 0, mbway: 0 };
+    let paid = 0;
+    itemPayments(i).forEach(pp => {
+      let amt;
+      if (pp.amount != null) amt = pp.amount;
+      else if (pp.perUnit != null) amt = (pp.units || 0) * pp.perUnit;
+      else { amt = 0; for (let k = 0; k < (pp.units || 0) && queue.length; k++) amt += queue.shift(); }
+      paid += amt; by[pp.method] += amt;
+    });
+    const total = prices.reduce((a, b) => a + b, 0);
+    return { units, prices, total, paid, by, pending: Math.max(0, total - paid) };
+  });
+
+  const paid = perItem.reduce((a, i) => a + i.paid, 0);
+  const by = {
+    cash:  perItem.reduce((a, i) => a + i.by.cash,  0),
+    mbway: perItem.reduce((a, i) => a + i.by.mbway, 0),
+  };
+  return { perItem, total: saleTotal, paid, pending: Math.max(0, saleTotal - paid), by };
+}
+
 function salePaidUnits(s)   { const avg = saleUnitPrice(s); return (s.items || []).reduce((sum, i) => sum + itemPaidUnits(i, avg), 0); }
 function salePendingUnits(s){ return Math.max(0, (s.units || 0) - salePaidUnits(s)); }
-function salePaidAmount(s)  { const avg = saleUnitPrice(s); return (s.items || []).reduce((sum, i) => sum + itemPaidAmount(i, avg), 0); }
-function salePendingAmount(s) { return Math.max(0, (s.totalPrice || 0) - salePaidAmount(s)); }
-function salePaidByMethod(s) {
-  const avg = saleUnitPrice(s);
-  const out = { cash: 0, mbway: 0 };
-  (s.items || []).forEach(i => itemPayments(i).forEach(p => { out[p.method] += paymentAmount(p, avg); }));
-  return out;
-}
+function salePaidAmount(s)  { return priceSale(s).paid; }
+function salePendingAmount(s) { return priceSale(s).pending; }
+function salePaidByMethod(s) { return priceSale(s).by; }
 
 // ═══════════════════════════════════════
 // SUPABASE CRUD
@@ -2843,9 +2895,10 @@ function calcBreakdownFromConfig(pricing, units, pastUnitsSold = 0, applyPromo =
   return { lines, total };
 }
 
-// Human-readable summary: "10 a €10 + 40 a €12"
+// Human-readable summary: "10 a €10 + 40 a €12" (valores redondos, sem cêntimos)
 function breakdownToText(lines) {
-  return lines.map(l => `${l.units} a €${l.perUnit.toFixed(2)}`).join(' + ');
+  const eur = n => '€' + (Math.abs(n - Math.round(n)) < 0.005 ? String(Math.round(n)) : n.toFixed(2));
+  return lines.map(l => `${l.units} a ${eur(l.perUnit)}`).join(' + ');
 }
 
 function customerFromDB(row) {
@@ -3135,20 +3188,18 @@ function computeHaulStats() {
 
   // Drain sales FIFO (strict chronological: skip hauls created AFTER the sale)
   salesAsc.forEach(sale => {
-    const totalSaleUnits = sale.units || 0;
-    const pricePerUnit = totalSaleUnits > 0 ? (sale.totalPrice / totalSaleUnits) : 0;
+    // Preços REAIS por vape (escalões €10/€12), nunca média. priceSale dá, por
+    // item, a lista de preços (ascendente) e o pago/método já valorizados certo.
+    const pr = priceSale(sale);
 
-    (sale.items || []).forEach(saleItem => {
+    (sale.items || []).forEach((saleItem, itemIdx) => {
       const key = (saleItem.flavor || '') + '|' + (saleItem.model || '');
       const itemUnits = parseInt(saleItem.units) || 0;
-      // Per-item payment by € (paid-first). paidRemaining is the paid-unit equivalent
-      // (amount ÷ average price), so it may be fractional for partial-value payments.
-      // The method split is proportional to the item's cash/mbway € amounts.
-      const itemPaidAmt = itemPaidAmount(saleItem, pricePerUnit);
-      const itemByMethod = { cash: 0, mbway: 0 };
-      itemPayments(saleItem).forEach(p => { itemByMethod[p.method] += paymentAmount(p, pricePerUnit); });
-      const mbShare = itemPaidAmt > 0 ? itemByMethod.mbway / itemPaidAmt : 0;
-      let paidRemaining = pricePerUnit > 0 ? itemPaidAmt / pricePerUnit : 0;
+      const info = pr.perItem[itemIdx] || { prices: [], paid: 0, by: { cash: 0, mbway: 0 } };
+      // Fila de preços reais (mais baratos primeiro) e € pago a consumir paid-first.
+      const priceQueue = info.prices.slice();
+      const mbShare = info.paid > 0 ? info.by.mbway / info.paid : 0;
+      let paidEurRemaining = info.paid;
       let unitsToAssign = itemUnits;
       for (const haul of haulsAsc) {
         if (unitsToAssign <= 0) break;
@@ -3161,27 +3212,35 @@ function computeHaulStats() {
         stat.remaining[key] = avail - taken;
         unitsToAssign -= taken;
 
-        // Split this chunk into paid vs pending (paid-first)
-        const paidTaken = Math.min(taken, paidRemaining);
-        const pendingTaken = taken - paidTaken;
-        paidRemaining -= paidTaken;
+        // Real € of the vapes taken from this haul (cheapest first).
+        const chunkPrices = priceQueue.splice(0, taken);
+        const chunkRevenue = chunkPrices.reduce((a, b) => a + b, 0);
 
         stat.soldUnits += taken;
-        stat.revenueAll += taken * pricePerUnit;
+        stat.revenueAll += chunkRevenue;
         stat.cost += taken * (haul.pricePerVape || 0);
 
-        if (paidTaken > 0) {
-          const paidContribution = paidTaken * pricePerUnit;
-          stat.revenuePaid += paidContribution;
-          stat.paidUnits += paidTaken;
+        // Paid vs pending over these real prices (paid-first, cheapest first).
+        let chunkPaid = 0, paidUnitsInChunk = 0;
+        for (const price of chunkPrices) {
+          if (paidEurRemaining <= 0.0001) break;
+          const pay = Math.min(price, paidEurRemaining);
+          chunkPaid += pay; paidEurRemaining -= pay;
+          paidUnitsInChunk += price > 0 ? pay / price : 1;
+        }
+        const chunkPending = chunkRevenue - chunkPaid;
+
+        if (chunkPaid > 0.0001) {
+          stat.revenuePaid += chunkPaid;
+          stat.paidUnits += paidUnitsInChunk;
           // Split this paid chunk across methods, proportional to the item's € split.
-          const mb = paidContribution * mbShare;
-          const cash = paidContribution - mb;
+          const mb = chunkPaid * mbShare;
+          const cash = chunkPaid - mb;
           if (mb   > 0.0001) { stat.revenueMbway += mb;   stat.mbwaySalesIds.add(sale.id); }
           if (cash > 0.0001) { stat.revenueCash  += cash; stat.cashSalesIds.add(sale.id); }
         }
-        if (pendingTaken > 0) {
-          stat.revenuePending += pendingTaken * pricePerUnit;
+        if (chunkPending > 0.0001) {
+          stat.revenuePending += chunkPending;
           stat.pendingSalesIds.add(sale.id);
         }
         stat.anySalesIds.add(sale.id);
@@ -3851,13 +3910,36 @@ function addSaleItemRow(item) {
   refreshPaySum();
 }
 
-// Average € per vape in the current form (sale total ÷ total vapes). Used to show
-// the per-item value and to convert quick "paid units" into € when opening Divisão.
+// Average € per vape in the current form (sale total ÷ total vapes). Usado só
+// como recurso para semear a Divisão quando não há preços reais.
 function formAvgPrice() {
   const rows = [...document.querySelectorAll('#sale-items-wrap .item-card')];
   const totalUnits = rows.reduce((s, c) => s + (parseInt(c.querySelector('.sale-item-units').value) || 0), 0);
   const total = parseFloat(document.getElementById('sale-price')?.value) || 0;
   return totalUnits > 0 ? total / totalUnits : 0;
+}
+
+// Valorização por PREÇO REAL do formulário atual (escalões, não média).
+// Devolve as linhas e o priceSale() do estado corrente do form.
+function formPriceSale() {
+  const rows = [...document.querySelectorAll('#sale-items-wrap .item-card')];
+  const items = rows.map(c => {
+    const units = parseInt(c.querySelector('.sale-item-units')?.value) || 0;
+    return {
+      flavor: (c.querySelector('.sale-item-flavor')?.value || '').trim(),
+      model:  (c.querySelector('.sale-item-model')?.value || '').trim(),
+      units,
+      payments: itemPayments({ units, payments: readItemPaymentsFromCard(c) }),
+    };
+  });
+  const totalUnits = items.reduce((a, i) => a + i.units, 0);
+  const total = parseFloat(document.getElementById('sale-price')?.value) || 0;
+  const promoEl = document.getElementById('sale-apply-promo');
+  const info = priceSale({
+    items, units: totalUnits, totalPrice: total,
+    applyPromo: !!(promoEl && promoEl.checked), id: _openSheetEditId || null,
+  });
+  return { rows, info };
 }
 
 // A Divisão row: how much € was paid by a given method.
@@ -3897,16 +3979,14 @@ function toggleSplitMode(card, forceOn) {
         <div class="split-rows"></div>
         <button type="button" class="split-add" style="background:none;border:1px dashed var(--border);border-radius:8px;color:var(--accent);font:inherit;font-size:12px;font-weight:600;cursor:pointer;padding:6px 10px;">+ Adicionar pagamento</button>`;
       const rowsEl = splits.querySelector('.split-rows');
-      const avg = formAvgPrice();
+      // Semear com os € REAIS já pagos por método (preços de escalão, não média).
       const r2 = n => Math.round(n * 100) / 100;
-      let seed = (card._initialPayments && card._initialPayments.length)
-        ? card._initialPayments.map(p => ({ amount: r2(paymentAmount(p, avg)), method: p.method }))
-        : [];
-      if (!seed.length) {
-        const qp = parseInt(card.querySelector('.sale-item-paid').value) || 0;
-        const qm = card.querySelector('.sale-item-method').value === 'mbway' ? 'mbway' : 'cash';
-        seed = qp > 0 ? [{ amount: r2(qp * avg), method: qm }] : [{ amount:'', method:'cash' }];
-      }
+      const { rows, info } = formPriceSale();
+      const it = info.perItem[rows.indexOf(card)] || { by: { cash: 0, mbway: 0 } };
+      let seed = [];
+      if (it.by.cash  > 0.005) seed.push({ amount: r2(it.by.cash),  method: 'cash' });
+      if (it.by.mbway > 0.005) seed.push({ amount: r2(it.by.mbway), method: 'mbway' });
+      if (!seed.length) seed = [{ amount: '', method: 'cash' }];
       seed.forEach(p => addSplitRow(card, rowsEl, p));
       splits.querySelector('.split-add').addEventListener('click', () => addSplitRow(card, rowsEl, null));
     }
@@ -3947,14 +4027,13 @@ function updateSaleItemPaySummary(card) {
     if (paid < 0) paidInp.value = '';
     if (units > 0 && paid > units) paidInp.value = String(units);
   }
-  const avg = formAvgPrice();
-  const payments = itemPayments({ units, payments: readItemPaymentsFromCard(card) });
-  const by = { cash: 0, mbway: 0 };
-  let paidAmt = 0;
-  payments.forEach(p => { const a = paymentAmount(p, avg); paidAmt += a; by[p.method] += a; });
-  const itemValue = units * avg;
-  const pendAmt = Math.max(0, itemValue - paidAmt);
-  const e = n => '€' + (Math.round(n * 100) / 100).toFixed(2);
+  const { rows, info } = formPriceSale();
+  const it = info.perItem[rows.indexOf(card)] || { total: 0, paid: 0, pending: 0, by: { cash: 0, mbway: 0 } };
+  const by = it.by;
+  const paidAmt = it.paid;
+  const itemValue = it.total;
+  const pendAmt = it.pending;
+  const e = n => fmt(n); // valores redondos, sem cêntimos
   const mparts = [];
   if (by.cash  > 0.0001) mparts.push(e(by.cash)  + '💵');
   if (by.mbway > 0.0001) mparts.push(e(by.mbway) + '📱');
@@ -4231,14 +4310,12 @@ async function markSalePaid(id, method) {
     const sale = getSales().find(s => s.id === id);
     if (!sale) return;
     const m = method === 'mbway' ? 'mbway' : 'cash';
-    // Keep any existing payments (e.g. a Divisão) and top up each item's remaining
-    // € (its units × average price minus what's already paid) with the chosen method.
-    const avg = saleUnitPrice(sale);
-    const items = (sale.items || []).map(i => {
+    // Keep any existing payments (e.g. a Divisão) and top up each item's REAL
+    // remaining € (preço de escalão real, não média) com o método escolhido.
+    const pr = priceSale(sale);
+    const items = (sale.items || []).map((i, idx) => {
       const existing = itemPayments(i);
-      const itemVal = (parseInt(i.units) || 0) * avg;
-      const paid = existing.reduce((s, p) => s + paymentAmount(p, avg), 0);
-      const rest = Math.max(0, itemVal - paid);
+      const rest = Math.max(0, (pr.perItem[idx] ? pr.perItem[idx].pending : 0));
       const payments = rest > 0.0001 ? [...existing, { amount: Math.round(rest * 100) / 100, method: m }] : existing;
       return { flavor: i.flavor, model: i.model, units: i.units, payments };
     });
@@ -4474,8 +4551,9 @@ function openHaulDetail(id) {
 
 function saleCard(s) {
   const status = s.status || 'pending';
-  const paidAmt = salePaidAmount(s);
-  const pendAmt = salePendingAmount(s);
+  const pr = priceSale(s);
+  const paidAmt = pr.paid;
+  const pendAmt = pr.pending;
   const hasPending = pendAmt > 0.005;
   const hasPaid = paidAmt > 0.005;
   const amountColor = status === 'pending' ? 'yellow'
@@ -4499,7 +4577,7 @@ function saleCard(s) {
   const actions = payBtns + resetBtn;
 
   // Partial summary line (only when the sale is genuinely split)
-  const byM = salePaidByMethod(s);
+  const byM = pr.by;
   let paySummary = '';
   if (hasPaid && hasPending) {
     const mparts = [];
@@ -4535,11 +4613,14 @@ function saleCard(s) {
     </div>
     ${paySummary}
     <div style="display:flex;gap:4px;flex-wrap:wrap;">
-      ${(() => { const avg = saleUnitPrice(s); return (s.items || []).map(it => {
-        const summary = itemPaidSummaryShort(it, avg);
-        const tag = summary ? ` · ${summary}` : '';
+      ${(s.items || []).map((it, idx) => {
+        const ib = pr.perItem[idx] ? pr.perItem[idx].by : { cash: 0, mbway: 0 };
+        const parts = [];
+        if (ib.cash  > 0.005) parts.push(fmt(ib.cash)  + '💵');
+        if (ib.mbway > 0.005) parts.push(fmt(ib.mbway) + '📱');
+        const tag = parts.length ? ` · ${parts.join('·')}` : '';
         return `<span class="badge badge-purple">${escapeHtml(it.flavor || '?')}${it.model ? ' · ' + escapeHtml(it.model) : ''} · ${it.units}v${tag}</span>`;
-      }).join(''); })()}
+      }).join('')}
     </div>
     ${s.customer ? `<div class="list-item-meta"><span>👤 <strong>${escapeHtml(s.customer)}</strong></span></div>` : ''}
     ${s.notes ? `<div class="list-item-notes">${escapeHtml(s.notes)}</div>` : ''}
@@ -5680,10 +5761,9 @@ function exportSalesAsCSV() {
   const escapeCsv = v => `"${String(v == null ? '' : v).replace(/\r?\n/g, ' ').replace(/"/g, '""')}"`;
   const lines = [headers.join(',')];
   sales.forEach(s => {
-    const avg = saleUnitPrice(s);
-    const itemsTxt = (s.items || []).map(i => {
-      const byM = { cash: 0, mbway: 0 };
-      itemPayments(i).forEach(p => { byM[p.method] += paymentAmount(p, avg); });
+    const pr = priceSale(s);
+    const itemsTxt = (s.items || []).map((i, idx) => {
+      const byM = pr.perItem[idx] ? pr.perItem[idx].by : { cash: 0, mbway: 0 };
       const r2 = n => Math.round(n * 100) / 100;
       const parts = [];
       if (byM.cash  > 0.005) parts.push(`€${r2(byM.cash)} Dinheiro`);
