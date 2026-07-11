@@ -2162,7 +2162,7 @@ function createSbClient() {
 }
 
 // App version — keep in sync with sw.js VERSION (used in account sheet for verification)
-const APP_VERSION = 'v56';
+const APP_VERSION = 'v57';
 
 let currentUser = null;
 let dataReady = false;
@@ -4724,12 +4724,20 @@ function emptyState(text, type) {
 // ═══════════════════════════════════════
 function refreshAll() {
   invalidateComputeCache();
-  refreshDatalists();
-  refreshInicio();
-  refreshHauls();
-  refreshVendas();
-  refreshClientes();
-  refreshOpenSheet(); // instant update of any open detail sheet
+  // Cada secção é isolada: se uma falhar a renderizar (dados inesperados), as
+  // outras continuam e a app NUNCA bloqueia por causa de um erro de render.
+  const steps = [
+    ['datalists', refreshDatalists],
+    ['inicio',    refreshInicio],
+    ['hauls',     refreshHauls],
+    ['vendas',    refreshVendas],
+    ['clientes',  refreshClientes],
+    ['sheet',     refreshOpenSheet], // instant update of any open detail sheet
+  ];
+  for (const [name, fn] of steps) {
+    try { fn(); }
+    catch (e) { console.error('refreshAll: falha ao renderizar "' + name + '"', e); }
+  }
 }
 
 // Refresh only what's needed for the page being shown (no data invalidation).
@@ -5736,13 +5744,22 @@ async function handleAuthSubmit(e) {
 async function afterLogin() {
   hideAuthScreen();
   showToast('Sessão iniciada ✓', 'success');
+  refreshAll();            // app utilizável já (mostra o que houver)
+  loadDataInBackground();  // dados carregam sem bloquear a interface
+}
+
+// Carrega os dados SEM bloquear a UI. A app já está visível e utilizável;
+// quando os dados chegam, re-renderiza. Se falhar, mostra um erro claro e
+// acionável em vez de deixar o dashboard a zeros em silêncio.
+async function loadDataInBackground() {
   try {
     await withTimeout(loadAllData(), 20000, 'dados');
+    refreshAll();
   } catch (e) {
     console.error('loadAllData failed:', e);
-    showToast('Não foi possível carregar os dados. Toca em "Atualizar" para tentar de novo.', 'error', 0);
+    refreshAll(); // renderiza o que houver em cache
+    showToast('Não foi possível carregar os dados. Verifica a ligação à internet e toca em "Atualizar".', 'error', 0);
   }
-  refreshAll();
 }
 
 // ═══════════════════════════════════════
@@ -5901,17 +5918,12 @@ async function checkAuth() {
     const { data: { session } } = await withTimeout(sb.auth.getSession(), 10000, 'sessão');
     if (session) {
       currentUser = session.user;
-      hideAuthScreen(); // reveal the app UI (still under the splash)
-      try {
-        await withTimeout(loadAllData(), 20000, 'dados');
-      } catch (e) {
-        // Network/DB unreachable: reach the app anyway (never trap the user on
-        // the splash) and tell them how to retry instead of showing silent zeros.
-        console.error('loadAllData failed:', e);
-        showToast('Não foi possível carregar os dados. Toca em "Atualizar" para tentar de novo.', 'error', 0);
-      }
+      // Revela a app IMEDIATAMENTE e utilizável — nunca esperamos pela rede
+      // atrás do splash. Os dados carregam em segundo plano (loadDataInBackground).
+      hideAuthScreen();
       refreshAll();
       hideSplash();
+      loadDataInBackground();
     } else {
       showAuthScreen(); // also hides splash
     }
