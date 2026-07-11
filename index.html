@@ -13,7 +13,10 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
   <link rel="preconnect" href="https://aqsjgciiwmpodrdgakwf.supabase.co" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <!-- Fonte NÃO-bloqueante: media=print + onload evita que uma rede lenta/bloqueada
+       (ex.: redes que bloqueiam o Google Fonts) atrase o arranque da app. -->
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" media="print" onload="this.media='all'">
+  <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap"></noscript>
   <link rel="manifest" href="/manifest.json">
   <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <link rel="apple-touch-icon" href="/icon-192.png">
@@ -2162,7 +2165,7 @@ function createSbClient() {
 }
 
 // App version — keep in sync with sw.js VERSION (used in account sheet for verification)
-const APP_VERSION = 'v57';
+const APP_VERSION = 'v58';
 
 let currentUser = null;
 let dataReady = false;
@@ -3072,6 +3075,12 @@ let _memoStats = null;
 let _memoStockMap = null;
 let _memoSalesByHaul = null;
 let _memoPromoUsed = null;
+// Guarda contra reentrância: computeHaulStats() chama priceSale() → calcSaleBreakdown()
+// → distributeItemsAcrossHaulsFIFO() → que volta a chamar computeHaulStats(). Como o
+// _memoStats só é definido no fim, isso causava RECURSÃO INFINITA (app congelava a
+// qualquer venda). Enquanto os stats estão a ser calculados, as chamadas reentrantes
+// recebem os stats em construção (capacidade/restante já corretos para a distribuição).
+let _statsInProgress = null;
 function invalidateComputeCache() {
   _memoStats = null;
   _memoStockMap = null;
@@ -3157,6 +3166,9 @@ function getLowStockItems() {
 // ═══════════════════════════════════════
 function computeHaulStats() {
   if (_memoStats) return _memoStats;
+  // Chamada reentrante (via priceSale→distribute enquanto ainda estamos a drenar):
+  // devolve os stats parciais para quebrar a recursão infinita.
+  if (_statsInProgress) return _statsInProgress;
   // Sort hauls chronologically by date+createdAt (oldest first for FIFO)
   // IMPORTANT: don't tie-break by id (UUID = random order), use createdAt instead
   const haulsAsc = getHauls().slice().sort((a, b) => {
@@ -3202,6 +3214,11 @@ function computeHaulStats() {
       lastSaleDate: null,
     });
   });
+
+  // Exposto às chamadas reentrantes (priceSale→distribute) durante a drenagem.
+  // O try/finally garante que _statsInProgress é sempre reposto, mesmo em erro.
+  _statsInProgress = stats;
+  try {
 
   // Drain sales FIFO (strict chronological: skip hauls created AFTER the sale)
   salesAsc.forEach(sale => {
@@ -3302,6 +3319,9 @@ function computeHaulStats() {
     }
   });
 
+  } finally {
+    _statsInProgress = null;
+  }
   _memoStats = stats;
   return stats;
 }
