@@ -13,9 +13,12 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
   <link rel="preconnect" href="https://aqsjgciiwmpodrdgakwf.supabase.co" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <!-- Fonte NÃO-bloqueante: media=print + onload evita que uma rede lenta/bloqueada
+       (ex.: redes que bloqueiam o Google Fonts) atrase o arranque da app. -->
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" media="print" onload="this.media='all'">
+  <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap"></noscript>
   <link rel="manifest" href="/manifest.json">
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <link rel="apple-touch-icon" href="/icon-192.png">
   <link rel="apple-touch-icon" sizes="192x192" href="/icon-192.png">
   <link rel="apple-touch-icon" sizes="512x512" href="/icon-512.png">
@@ -2146,12 +2149,23 @@
 // ═══════════════════════════════════════
 const SUPABASE_URL = 'https://aqsjgciiwmpodrdgakwf.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_aAZMc4p55xSHZiaDVVo9Qw_oWcU15Hr';
-const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
-  auth: { persistSession: true, autoRefreshToken: true },
-});
+
+// The Supabase client library is fetched from a CDN (see <head>). On flaky
+// networks, captive portals or with content-blockers that request can fail —
+// which used to throw right here and freeze the ENTIRE app on the splash
+// spinner forever (nothing below this line would run). `sb` is now created
+// lazily by bootstrap() once the library is confirmed loaded, with CDN
+// fallbacks and a clear "try again" error UI instead of a dead spinner.
+let sb = null;
+
+function createSbClient() {
+  return window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+    auth: { persistSession: true, autoRefreshToken: true },
+  });
+}
 
 // App version — keep in sync with sw.js VERSION (used in account sheet for verification)
-const APP_VERSION = 'v55';
+const APP_VERSION = 'v58';
 
 let currentUser = null;
 let dataReady = false;
@@ -2549,6 +2563,12 @@ async function loadAllData() {
   if (sales.error) console.error('Load sales error:', sales.error);
   if (customers.error) console.error('Load customers error:', customers.error);
   if (pricing.error) console.error('Load pricing error:', pricing.error);
+  // Hard failure (network down / bad session): don't silently paint an
+  // all-zeros dashboard — throw so the caller can warn the user and keep
+  // whatever was cached before instead of wiping it.
+  if (hauls.error && sales.error && customers.error) {
+    throw new Error((hauls.error && hauls.error.message) || 'Falha ao carregar dados');
+  }
   cache.hauls = (hauls.data || []).map(haulFromDB);
   cache.sales = (sales.data || []).map(saleFromDB);
   cache.customers = (customers.data || []).map(customerFromDB);
@@ -3055,6 +3075,12 @@ let _memoStats = null;
 let _memoStockMap = null;
 let _memoSalesByHaul = null;
 let _memoPromoUsed = null;
+// Guarda contra reentrância: computeHaulStats() chama priceSale() → calcSaleBreakdown()
+// → distributeItemsAcrossHaulsFIFO() → que volta a chamar computeHaulStats(). Como o
+// _memoStats só é definido no fim, isso causava RECURSÃO INFINITA (app congelava a
+// qualquer venda). Enquanto os stats estão a ser calculados, as chamadas reentrantes
+// recebem os stats em construção (capacidade/restante já corretos para a distribuição).
+let _statsInProgress = null;
 function invalidateComputeCache() {
   _memoStats = null;
   _memoStockMap = null;
@@ -3140,6 +3166,9 @@ function getLowStockItems() {
 // ═══════════════════════════════════════
 function computeHaulStats() {
   if (_memoStats) return _memoStats;
+  // Chamada reentrante (via priceSale→distribute enquanto ainda estamos a drenar):
+  // devolve os stats parciais para quebrar a recursão infinita.
+  if (_statsInProgress) return _statsInProgress;
   // Sort hauls chronologically by date+createdAt (oldest first for FIFO)
   // IMPORTANT: don't tie-break by id (UUID = random order), use createdAt instead
   const haulsAsc = getHauls().slice().sort((a, b) => {
@@ -3185,6 +3214,11 @@ function computeHaulStats() {
       lastSaleDate: null,
     });
   });
+
+  // Exposto às chamadas reentrantes (priceSale→distribute) durante a drenagem.
+  // O try/finally garante que _statsInProgress é sempre reposto, mesmo em erro.
+  _statsInProgress = stats;
+  try {
 
   // Drain sales FIFO (strict chronological: skip hauls created AFTER the sale)
   salesAsc.forEach(sale => {
@@ -3285,6 +3319,9 @@ function computeHaulStats() {
     }
   });
 
+  } finally {
+    _statsInProgress = null;
+  }
   _memoStats = stats;
   return stats;
 }
@@ -4707,12 +4744,20 @@ function emptyState(text, type) {
 // ═══════════════════════════════════════
 function refreshAll() {
   invalidateComputeCache();
-  refreshDatalists();
-  refreshInicio();
-  refreshHauls();
-  refreshVendas();
-  refreshClientes();
-  refreshOpenSheet(); // instant update of any open detail sheet
+  // Cada secção é isolada: se uma falhar a renderizar (dados inesperados), as
+  // outras continuam e a app NUNCA bloqueia por causa de um erro de render.
+  const steps = [
+    ['datalists', refreshDatalists],
+    ['inicio',    refreshInicio],
+    ['hauls',     refreshHauls],
+    ['vendas',    refreshVendas],
+    ['clientes',  refreshClientes],
+    ['sheet',     refreshOpenSheet], // instant update of any open detail sheet
+  ];
+  for (const [name, fn] of steps) {
+    try { fn(); }
+    catch (e) { console.error('refreshAll: falha ao renderizar "' + name + '"', e); }
+  }
 }
 
 // Refresh only what's needed for the page being shown (no data invalidation).
@@ -5719,8 +5764,22 @@ async function handleAuthSubmit(e) {
 async function afterLogin() {
   hideAuthScreen();
   showToast('Sessão iniciada ✓', 'success');
-  await loadAllData();
-  refreshAll();
+  refreshAll();            // app utilizável já (mostra o que houver)
+  loadDataInBackground();  // dados carregam sem bloquear a interface
+}
+
+// Carrega os dados SEM bloquear a UI. A app já está visível e utilizável;
+// quando os dados chegam, re-renderiza. Se falhar, mostra um erro claro e
+// acionável em vez de deixar o dashboard a zeros em silêncio.
+async function loadDataInBackground() {
+  try {
+    await withTimeout(loadAllData(), 20000, 'dados');
+    refreshAll();
+  } catch (e) {
+    console.error('loadAllData failed:', e);
+    refreshAll(); // renderiza o que houver em cache
+    showToast('Não foi possível carregar os dados. Verifica a ligação à internet e toca em "Atualizar".', 'error', 0);
+  }
 }
 
 // ═══════════════════════════════════════
@@ -5876,13 +5935,15 @@ async function handleLogout() {
 
 async function checkAuth() {
   try {
-    const { data: { session } } = await sb.auth.getSession();
+    const { data: { session } } = await withTimeout(sb.auth.getSession(), 10000, 'sessão');
     if (session) {
       currentUser = session.user;
-      await loadAllData();
+      // Revela a app IMEDIATAMENTE e utilizável — nunca esperamos pela rede
+      // atrás do splash. Os dados carregam em segundo plano (loadDataInBackground).
+      hideAuthScreen();
       refreshAll();
-      hideAuthScreen(); // reveals app and removes splash via reveal
       hideSplash();
+      loadDataInBackground();
     } else {
       showAuthScreen(); // also hides splash
     }
@@ -5893,6 +5954,20 @@ async function checkAuth() {
 }
 
 function init() {
+  // Absolute failsafe: no matter what happens below (render error, stalled
+  // network, unexpected exception), the splash must never trap the user.
+  setTimeout(() => {
+    const s = document.getElementById('splash');
+    if (s && !s.classList.contains('hidden')) {
+      console.warn('Splash failsafe fired — forcing a usable screen');
+      const app = document.getElementById('app-root');
+      const auth = document.getElementById('authScreen');
+      const appHidden = !app || app.classList.contains('hidden');
+      const authHidden = !auth || auth.classList.contains('hidden');
+      if (appHidden && authHidden) showAuthScreen();
+      else hideSplash();
+    }
+  }, 25000);
   try {
     wireEvents();
     wireAuthEvents();
@@ -5988,11 +6063,98 @@ function registerServiceWorker() {
   });
 }
 
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', init);
-} else {
+// ═══════════════════════════════════════
+// BOOTSTRAP (resilient startup)
+// ═══════════════════════════════════════
+// Reject a promise if it hasn't settled in `ms` — stops a stalled Supabase
+// network call from leaving the splash spinner up forever.
+function withTimeout(promise, ms, label) {
+  let t;
+  const timeout = new Promise((_, reject) => {
+    t = setTimeout(() => reject(new Error((label || 'operação') + ' expirou (' + ms + 'ms)')), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(t));
+}
+
+// CDN mirrors for the Supabase client. If the primary (in <head>) was blocked
+// or timed out we try these in order before giving up.
+const SUPABASE_CDNS = [
+  'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2',
+  'https://unpkg.com/@supabase/supabase-js@2',
+];
+
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = src;
+    s.async = true;
+    s.onload = resolve;
+    s.onerror = () => reject(new Error('Falha a carregar ' + src));
+    document.head.appendChild(s);
+  });
+}
+
+async function ensureSupabase() {
+  if (window.supabase && window.supabase.createClient) return true;
+  for (const url of SUPABASE_CDNS) {
+    try {
+      await withTimeout(loadScript(url), 12000, 'CDN');
+      if (window.supabase && window.supabase.createClient) return true;
+    } catch (e) {
+      console.warn('Supabase CDN indisponível:', url, e.message);
+    }
+  }
+  return !!(window.supabase && window.supabase.createClient);
+}
+
+// Replace the frozen spinner with a friendly, actionable error.
+function showFatalLoadError() {
+  const s = document.getElementById('splash');
+  if (!s) { alert('Não foi possível ligar ao servidor. Verifica a internet e recarrega a app.'); return; }
+  s.classList.remove('hidden');
+  const spinner = s.querySelector('.splash-spinner');
+  if (spinner) spinner.remove();
+  const box = document.createElement('div');
+  box.style.cssText = 'max-width:300px;text-align:center;color:#e5e7eb;font-size:14px;line-height:1.6;padding:20px 24px 0';
+  box.innerHTML =
+    'Não foi possível ligar ao servidor.<br>Verifica a tua ligação à internet e tenta de novo.' +
+    '<br><br><button id="retryLoadBtn" style="background:#6366f1;color:#fff;border:0;border-radius:12px;' +
+    'padding:12px 24px;font-size:15px;font-weight:600;cursor:pointer">Tentar de novo</button>';
+  s.appendChild(box);
+  const btn = box.querySelector('#retryLoadBtn');
+  if (btn) btn.addEventListener('click', () => location.reload());
+}
+
+async function bootstrap() {
+  const ok = await ensureSupabase();
+  if (!ok) { showFatalLoadError(); return; }
+  try {
+    sb = createSbClient();
+  } catch (err) {
+    console.error('Supabase init failed:', err);
+    showFatalLoadError();
+    return;
+  }
   init();
 }
+
+let __bootstrapped = false;
+function startBootstrap() {
+  if (__bootstrapped) return;
+  __bootstrapped = true;
+  bootstrap();
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', startBootstrap);
+} else {
+  startBootstrap();
+}
+// Safety net: a slow or failing deferred CDN <script> can delay DOMContentLoaded.
+// Don't wait on it — kick off bootstrap anyway (ensureSupabase loads the library
+// itself if it isn't there yet). All DOM this touches is already parsed, since
+// this script sits at the end of <body>.
+setTimeout(startBootstrap, 3000);
 </script>
 </body>
 </html>
