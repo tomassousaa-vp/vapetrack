@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://aqsjgciiwmpodrdgakwf.supabase.co" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="manifest" href="/manifest.json">
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <link rel="apple-touch-icon" href="/icon-192.png">
   <link rel="apple-touch-icon" sizes="192x192" href="/icon-192.png">
   <link rel="apple-touch-icon" sizes="512x512" href="/icon-512.png">
@@ -2146,12 +2146,23 @@
 // ═══════════════════════════════════════
 const SUPABASE_URL = 'https://aqsjgciiwmpodrdgakwf.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_aAZMc4p55xSHZiaDVVo9Qw_oWcU15Hr';
-const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
-  auth: { persistSession: true, autoRefreshToken: true },
-});
+
+// The Supabase client library is fetched from a CDN (see <head>). On flaky
+// networks, captive portals or with content-blockers that request can fail —
+// which used to throw right here and freeze the ENTIRE app on the splash
+// spinner forever (nothing below this line would run). `sb` is now created
+// lazily by bootstrap() once the library is confirmed loaded, with CDN
+// fallbacks and a clear "try again" error UI instead of a dead spinner.
+let sb = null;
+
+function createSbClient() {
+  return window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+    auth: { persistSession: true, autoRefreshToken: true },
+  });
+}
 
 // App version — keep in sync with sw.js VERSION (used in account sheet for verification)
-const APP_VERSION = 'v55';
+const APP_VERSION = 'v56';
 
 let currentUser = null;
 let dataReady = false;
@@ -2549,6 +2560,12 @@ async function loadAllData() {
   if (sales.error) console.error('Load sales error:', sales.error);
   if (customers.error) console.error('Load customers error:', customers.error);
   if (pricing.error) console.error('Load pricing error:', pricing.error);
+  // Hard failure (network down / bad session): don't silently paint an
+  // all-zeros dashboard — throw so the caller can warn the user and keep
+  // whatever was cached before instead of wiping it.
+  if (hauls.error && sales.error && customers.error) {
+    throw new Error((hauls.error && hauls.error.message) || 'Falha ao carregar dados');
+  }
   cache.hauls = (hauls.data || []).map(haulFromDB);
   cache.sales = (sales.data || []).map(saleFromDB);
   cache.customers = (customers.data || []).map(customerFromDB);
@@ -5719,7 +5736,12 @@ async function handleAuthSubmit(e) {
 async function afterLogin() {
   hideAuthScreen();
   showToast('Sessão iniciada ✓', 'success');
-  await loadAllData();
+  try {
+    await withTimeout(loadAllData(), 20000, 'dados');
+  } catch (e) {
+    console.error('loadAllData failed:', e);
+    showToast('Não foi possível carregar os dados. Toca em "Atualizar" para tentar de novo.', 'error', 0);
+  }
   refreshAll();
 }
 
@@ -5876,12 +5898,19 @@ async function handleLogout() {
 
 async function checkAuth() {
   try {
-    const { data: { session } } = await sb.auth.getSession();
+    const { data: { session } } = await withTimeout(sb.auth.getSession(), 10000, 'sessão');
     if (session) {
       currentUser = session.user;
-      await loadAllData();
+      hideAuthScreen(); // reveal the app UI (still under the splash)
+      try {
+        await withTimeout(loadAllData(), 20000, 'dados');
+      } catch (e) {
+        // Network/DB unreachable: reach the app anyway (never trap the user on
+        // the splash) and tell them how to retry instead of showing silent zeros.
+        console.error('loadAllData failed:', e);
+        showToast('Não foi possível carregar os dados. Toca em "Atualizar" para tentar de novo.', 'error', 0);
+      }
       refreshAll();
-      hideAuthScreen(); // reveals app and removes splash via reveal
       hideSplash();
     } else {
       showAuthScreen(); // also hides splash
@@ -5893,6 +5922,20 @@ async function checkAuth() {
 }
 
 function init() {
+  // Absolute failsafe: no matter what happens below (render error, stalled
+  // network, unexpected exception), the splash must never trap the user.
+  setTimeout(() => {
+    const s = document.getElementById('splash');
+    if (s && !s.classList.contains('hidden')) {
+      console.warn('Splash failsafe fired — forcing a usable screen');
+      const app = document.getElementById('app-root');
+      const auth = document.getElementById('authScreen');
+      const appHidden = !app || app.classList.contains('hidden');
+      const authHidden = !auth || auth.classList.contains('hidden');
+      if (appHidden && authHidden) showAuthScreen();
+      else hideSplash();
+    }
+  }, 25000);
   try {
     wireEvents();
     wireAuthEvents();
@@ -5988,11 +6031,98 @@ function registerServiceWorker() {
   });
 }
 
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', init);
-} else {
+// ═══════════════════════════════════════
+// BOOTSTRAP (resilient startup)
+// ═══════════════════════════════════════
+// Reject a promise if it hasn't settled in `ms` — stops a stalled Supabase
+// network call from leaving the splash spinner up forever.
+function withTimeout(promise, ms, label) {
+  let t;
+  const timeout = new Promise((_, reject) => {
+    t = setTimeout(() => reject(new Error((label || 'operação') + ' expirou (' + ms + 'ms)')), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(t));
+}
+
+// CDN mirrors for the Supabase client. If the primary (in <head>) was blocked
+// or timed out we try these in order before giving up.
+const SUPABASE_CDNS = [
+  'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2',
+  'https://unpkg.com/@supabase/supabase-js@2',
+];
+
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = src;
+    s.async = true;
+    s.onload = resolve;
+    s.onerror = () => reject(new Error('Falha a carregar ' + src));
+    document.head.appendChild(s);
+  });
+}
+
+async function ensureSupabase() {
+  if (window.supabase && window.supabase.createClient) return true;
+  for (const url of SUPABASE_CDNS) {
+    try {
+      await withTimeout(loadScript(url), 12000, 'CDN');
+      if (window.supabase && window.supabase.createClient) return true;
+    } catch (e) {
+      console.warn('Supabase CDN indisponível:', url, e.message);
+    }
+  }
+  return !!(window.supabase && window.supabase.createClient);
+}
+
+// Replace the frozen spinner with a friendly, actionable error.
+function showFatalLoadError() {
+  const s = document.getElementById('splash');
+  if (!s) { alert('Não foi possível ligar ao servidor. Verifica a internet e recarrega a app.'); return; }
+  s.classList.remove('hidden');
+  const spinner = s.querySelector('.splash-spinner');
+  if (spinner) spinner.remove();
+  const box = document.createElement('div');
+  box.style.cssText = 'max-width:300px;text-align:center;color:#e5e7eb;font-size:14px;line-height:1.6;padding:20px 24px 0';
+  box.innerHTML =
+    'Não foi possível ligar ao servidor.<br>Verifica a tua ligação à internet e tenta de novo.' +
+    '<br><br><button id="retryLoadBtn" style="background:#6366f1;color:#fff;border:0;border-radius:12px;' +
+    'padding:12px 24px;font-size:15px;font-weight:600;cursor:pointer">Tentar de novo</button>';
+  s.appendChild(box);
+  const btn = box.querySelector('#retryLoadBtn');
+  if (btn) btn.addEventListener('click', () => location.reload());
+}
+
+async function bootstrap() {
+  const ok = await ensureSupabase();
+  if (!ok) { showFatalLoadError(); return; }
+  try {
+    sb = createSbClient();
+  } catch (err) {
+    console.error('Supabase init failed:', err);
+    showFatalLoadError();
+    return;
+  }
   init();
 }
+
+let __bootstrapped = false;
+function startBootstrap() {
+  if (__bootstrapped) return;
+  __bootstrapped = true;
+  bootstrap();
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', startBootstrap);
+} else {
+  startBootstrap();
+}
+// Safety net: a slow or failing deferred CDN <script> can delay DOMContentLoaded.
+// Don't wait on it — kick off bootstrap anyway (ensureSupabase loads the library
+// itself if it isn't there yet). All DOM this touches is already parsed, since
+// this script sits at the end of <body>.
+setTimeout(startBootstrap, 3000);
 </script>
 </body>
 </html>
