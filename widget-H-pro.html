@@ -171,6 +171,14 @@
       <button data-screen="track" onclick="show('track')">Acompanhar</button>
     </div>
   </div>
+  <script>
+    // A barra de teste é uma ajuda de programação. Para os clientes fica escondida;
+    // para testares tu, abre o link com ?test  (ex.: /pedidos?test=1).
+    if (!/[?&]test\b/.test(location.search)) {
+      var _tb = document.querySelector('.testbar');
+      if (_tb) _tb.remove();
+    }
+  </script>
 
   <section class="screen on" id="welcome">
     <div class="brand"><div class="dot">🛒</div><h1>Puff</h1></div>
