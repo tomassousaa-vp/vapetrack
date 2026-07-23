@@ -234,10 +234,30 @@
 </div>
 
 <script>
+  // Sabores King Pro 65K (mesmos do 40K, agora descontinuado). Todos disponíveis
+  // (stock alto = sem esgotados). Para marcar um como esgotado, põe stock:0.
   const MODELS = [
-    { id:'kingpro40', name:'KingPro', puffs:'40k', flavors:[
-      { name:'Cherry Cola', stock:1, emo:'🍒🥤' },{ name:'Lemon Lime', stock:8, emo:'🍋🍈' },{ name:'Watermelon Ice', stock:5, emo:'🍉🧊' },
-      { name:'Blueberry', stock:3, emo:'🫐' },{ name:'Strawberry Mango', stock:6, emo:'🍓🥭' },
+    { id:'kingpro65', name:'King Pro', puffs:'65K', flavors:[
+      { name:'Black Ice Dragon Fruit Strawberry', stock:999, emo:'🐉🍓' },
+      { name:'Blueberry Sour Raspberry', stock:999, emo:'🫐😝' },
+      { name:'Cherry Cola', stock:999, emo:'🍒🥤' },
+      { name:'Cherry Lemon', stock:999, emo:'🍒🍋' },
+      { name:'Fizzy Cherry', stock:999, emo:'🍒🫧' },
+      { name:'Grape Burst', stock:999, emo:'🍇💥' },
+      { name:'Kiwi Passion Fruit Guava', stock:999, emo:'🥝🌺' },
+      { name:'Lemon Lime', stock:999, emo:'🍋🍈' },
+      { name:'Love 66', stock:999, emo:'❤️🔥' },
+      { name:'Mixed Berry', stock:999, emo:'🫐🍓' },
+      { name:'Monster Mango', stock:999, emo:'🥭👹' },
+      { name:'Peach Berry', stock:999, emo:'🍑🫐' },
+      { name:'Peach Mango Pineapple', stock:999, emo:'🍑🥭🍍' },
+      { name:'Pina Colada', stock:999, emo:'🍍🥥' },
+      { name:'Pink Lemonade', stock:999, emo:'🩷🍋' },
+      { name:'Sex on the Beach', stock:999, emo:'🍹🏖️' },
+      { name:'Strawberry Banana', stock:999, emo:'🍓🍌' },
+      { name:'Strawberry Kiwi', stock:999, emo:'🍓🥝' },
+      { name:'Strawberry Watermelon', stock:999, emo:'🍓🍉' },
+      { name:'Watermelon Ice', stock:999, emo:'🍉🧊' },
     ]},
   ];
   let flavors = MODELS[0].flavors;
@@ -250,7 +270,7 @@
       row.style.animationDelay=(i*0.06)+'s';
       row.innerHTML=`<div style="display:flex;align-items:center;gap:10px"><span class="emo">${f.emo||'🍭'}</span>
           <div><span class="fname">${f.name}</span>
-          <span class="fhint">Só há ${f.stock} disponível${f.stock>1?'eis':''}</span></div></div>
+          <span class="fhint">${f.stock>0?'Disponível':'Esgotado'}</span></div></div>
         <div class="stepper">
           <button class="minus" onclick="step(${i},-1)">−</button>
           <span class="qty zero" id="q${i}">0</span>

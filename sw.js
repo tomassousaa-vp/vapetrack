@@ -1,5 +1,5 @@
 // VapeTrack Service Worker — offline support + auto-update
-const VERSION = 'vapetrack-v58-fix-infinite-recursion';
+const VERSION = 'vapetrack-v59-kingpro-65k';
 const CACHE = `vt-cache-${VERSION}`;
 const ASSETS = [
   '/',
