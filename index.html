@@ -2201,7 +2201,7 @@ function createSbClient() {
 }
 
 // App version — keep in sync with sw.js VERSION (used in account sheet for verification)
-const APP_VERSION = 'v60';
+const APP_VERSION = 'v61';
 
 let currentUser = null;
 let dataReady = false;
@@ -2597,16 +2597,19 @@ function salePaidByMethod(s) { return priceSale(s).by; }
 // ═══════════════════════════════════════
 async function loadAllData() {
   if (!currentUser) return;
-  const [hauls, sales, customers, pricing] = await Promise.all([
+  const [hauls, sales, customers, pricing, pedidos] = await Promise.all([
     sb.from('hauls').select('*').order('date', { ascending: false }),
     sb.from('sales').select('*').order('date', { ascending: false }),
     sb.from('customers').select('*').order('name'),
     sb.from('pricing').select('*'),
+    // Pedidos do widget — tolerante a que a tabela ainda não exista (Fase 2).
+    sb.from('pedidos').select('*').order('created_at', { ascending: false }),
   ]);
   if (hauls.error) console.error('Load hauls error:', hauls.error);
   if (sales.error) console.error('Load sales error:', sales.error);
   if (customers.error) console.error('Load customers error:', customers.error);
   if (pricing.error) console.error('Load pricing error:', pricing.error);
+  if (pedidos.error) console.warn('Load pedidos (tabela ainda não criada?):', pedidos.error.message);
   // Hard failure (network down / bad session): don't silently paint an
   // all-zeros dashboard — throw so the caller can warn the user and keep
   // whatever was cached before instead of wiping it.
@@ -2616,6 +2619,7 @@ async function loadAllData() {
   cache.hauls = (hauls.data || []).map(haulFromDB);
   cache.sales = (sales.data || []).map(saleFromDB);
   cache.customers = (customers.data || []).map(customerFromDB);
+  cache.pedidos = (pedidos.data || []).map(pedidoFromDB);
   cache.pricing = {};
   (pricing.data || []).forEach(p => {
     cache.pricing[p.model_name] = {
@@ -2972,6 +2976,18 @@ function customerFromDB(row) {
     phone: row.phone || '',
     notes: row.notes || '',
     createdAt: row.created_at,
+  };
+}
+
+function pedidoFromDB(row) {
+  return {
+    id: row.id,
+    name: row.name || '',
+    phone: row.phone || '',
+    items: Array.isArray(row.items) ? row.items : [],
+    status: row.status || 'analise',
+    confirmado: row.confirmado === true,
+    createdAt: row.created_at || '',
   };
 }
 

@@ -1,5 +1,5 @@
 // VapeTrack Service Worker — offline support + auto-update
-const VERSION = 'vapetrack-v60-pedidos-ui';
+const VERSION = 'vapetrack-v61-pedidos-backend';
 const CACHE = `vt-cache-${VERSION}`;
 const ASSETS = [
   '/',
