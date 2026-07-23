@@ -14,13 +14,21 @@ Quando um pedido entra pelo widget, cruza-se o **telemóvel** com a base de clie
 |---|---|
 | Telemóvel **novo** | Cria/regista cliente novo; pedido entra normal. |
 | Telemóvel **existente + mesmo nome** | Associa ao cliente existente, sem aviso. |
-| Telemóvel **existente + NOME DIFERENTE** | Pedido entra **marcado com AVISO** na app de gestão → o Vasco confirma se é a mesma pessoa (mudou de nome/alcunha) ou alguém diferente a usar o mesmo número. |
+| Telemóvel **existente + NOME DIFERENTE** | Pedido entra **marcado com AVISO** (não bloqueia a entrada). O telemóvel é o identificador fiável — NÃO se pergunta o número ao cliente, já está na base. Mostra os DOIS nomes (o registado vs. o que o cliente escreveu). O gestor tem de **CONFIRMAR a identidade PRIMEIRO** e só depois é que os botões Aprovar/Recusar ficam disponíveis. |
 
 **Objetivo:** evitar clientes duplicados e apanhar casos como "Bruno" vs "Brunão", ou número
 reutilizado por outra pessoa.
 
-**Decisão por fechar:** no caso "mesmo número + nome diferente", o pedido deve ficar
-**em espera até confirmação** OU **entrar na mesma mas com etiqueta de aviso**? → A CONFIRMAR.
+**Decisão FECHADA (2026-07-23):**
+- No caso "mesmo número + nome diferente", o pedido **entra com etiqueta de aviso**
+  (não fica em espera invisível) — porque o telemóvel já está na base e é ele que
+  identifica o cliente; o gestor nunca tem de pedir o número ao cliente.
+- Fluxo obrigatório: **primeiro CONFIRMAÇÃO da identidade, depois Aprovar/Recusar.**
+  Ou seja, enquanto o aviso não for resolvido (é o mesmo cliente? / é outra pessoa?),
+  as ações Aprovar/Recusar ficam bloqueadas nesse pedido.
+  - "É o mesmo cliente" → associa ao cliente existente (mantém o registo/telemóvel);
+    fica registado o nome alternativo/alcunha. Depois pode aprovar/recusar.
+  - "É outra pessoa" → tratar como cliente distinto (mesmo número partilhado). Depois pode aprovar/recusar.
 
 ---
 
