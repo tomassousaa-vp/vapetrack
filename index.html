@@ -2201,7 +2201,7 @@ function createSbClient() {
 }
 
 // App version — keep in sync with sw.js VERSION (used in account sheet for verification)
-const APP_VERSION = 'v63';
+const APP_VERSION = 'v64';
 
 let currentUser = null;
 let dataReady = false;
@@ -3912,12 +3912,14 @@ async function handleHaulPromosSubmit(e) {
 // ═══════════════════════════════════════
 function prepareSaleForm(editId) {
   refreshDatalists();
-  populateSaleCatalogPicker();
   const form = document.getElementById('sale-form');
   form.reset();
   salePriceManuallyEdited = false;
   document.getElementById('sale-catalog-chips').style.display = 'none';
   document.getElementById('sale-catalog-hint').style.display = 'none';
+  // Depois do reset: popula o seletor de modelo (só com stock) e, se houver um
+  // único modelo, seleciona-o automaticamente e mostra logo os sabores.
+  populateSaleCatalogPicker();
 
   // Reset promo toggle (default OFF — user must explicitly enable)
   const promoEl = document.getElementById('sale-apply-promo');
@@ -4225,16 +4227,32 @@ function updateSaleTotals() {
 function populateSaleCatalogPicker() {
   const picker = document.getElementById('sale-catalog-picker');
   const map = getStockMap();
-  // Show only models that have stock
+  // Só modelos COM stock — não mostrar modelos sem unidades (ex.: MARS/QUADS
+  // quando só há King Pro em stock).
   const modelsWithStock = new Set();
   Object.keys(map).forEach(f => {
     Object.keys(map[f]).forEach(m => { if (map[f][m] > 0) modelsWithStock.add(m); });
   });
-  // Also include catalog models (in case stock is zero but user wants to track anyway)
-  const catalogModels = Object.keys(getCatalog());
-  const allModels = [...new Set([...modelsWithStock, ...catalogModels])].sort();
+  let models = [...modelsWithStock].sort();
+  // Sem stock em nenhum modelo → recorre ao catálogo (para poder registar na mesma).
+  if (models.length === 0) models = Object.keys(getCatalog()).sort();
+
   picker.innerHTML = '<option value="">— Escolhe o modelo —</option>' +
-    allModels.map(m => `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`).join('');
+    models.map(m => `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`).join('');
+
+  const field = picker.closest('.field');
+  const label = field ? field.querySelector('.field-label') : null;
+  if (models.length === 1) {
+    // Um único modelo → escolhe-o sozinho, esconde o seletor (é desnecessário) e
+    // mostra logo os sabores.
+    picker.value = models[0];
+    picker.style.display = 'none';
+    if (label) label.textContent = '1. Sabor · ' + models[0];
+    handleSaleCatalogPickerChange({ target: picker });
+  } else {
+    picker.style.display = '';
+    if (label) label.textContent = '1. Modelo';
+  }
 }
 
 function handleSaleCatalogPickerChange(e) {
