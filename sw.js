@@ -1,5 +1,5 @@
 // VapeTrack Service Worker — offline support + auto-update
-const VERSION = 'vapetrack-v63-pedidos-fase2b';
+const VERSION = 'vapetrack-v64-venda-modelo-auto';
 const CACHE = `vt-cache-${VERSION}`;
 const ASSETS = [
   '/',
