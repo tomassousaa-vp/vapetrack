@@ -209,10 +209,11 @@
     <div class="card center">
       <div class="checkwrap"><span class="c">✓</span></div>
       <h2>Pedido recebido!</h2>
-      <p>Guarda este link para veres o estado — não enviamos mensagens.</p>
-      <div class="linkbox"><code>puff.pt/p/7Kq9-x2M4</code><button class="copy">Copiar</button></div>
+      <p>Obrigado! Recebemos o teu pedido e entramos em contacto contigo em breve.</p>
+      <div class="sec-label" style="margin-top:6px">O teu pedido</div>
+      <div id="doneOrder" style="text-align:left;margin-top:6px;width:100%"></div>
     </div>
-    <button class="btn ghost" onclick="show('track')">Abrir o meu link →</button>
+    <button class="btn ghost" onclick="location.reload()">Fazer novo pedido</button>
   </section>
 
   <section class="screen" id="track">
@@ -338,6 +339,9 @@
         body: JSON.stringify({ name, phone, items, status:'analise' }),
       });
       if(!res.ok){ throw new Error('HTTP '+res.status+' '+(await res.text().catch(()=>''))); }
+      // Mostra o pedido REAL na confirmação (não conteúdo fixo).
+      const done = document.getElementById('doneOrder');
+      if(done){ done.innerHTML = items.map(it=>`<div class="itemline"><span>${it.emo||''} ${it.flavor}</span><b>${it.units}</b></div>`).join(''); }
       show('done');
     }catch(err){
       console.error('Falha ao enviar pedido:', err);
