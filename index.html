@@ -2201,7 +2201,7 @@ function createSbClient() {
 }
 
 // App version — keep in sync with sw.js VERSION (used in account sheet for verification)
-const APP_VERSION = 'v64';
+const APP_VERSION = 'v65';
 
 let currentUser = null;
 let dataReady = false;
@@ -4959,10 +4959,12 @@ function refreshPedidos() {
 
   const list = document.getElementById('pedidos-list');
   if (!list) return;
-  if (pedidos.length === 0) { list.innerHTML = emptyPedidosState(); return; }
+  // Recusados saem da lista (ficam gravados na BD, mas não voltam a aparecer).
+  const visiveis = pedidos.filter(p => p.status !== 'recusado');
+  if (visiveis.length === 0) { list.innerHTML = emptyPedidosState(); return; }
   // Em análise primeiro; depois mais recentes primeiro.
-  const rank = { analise: 0, aprovado: 1, recusado: 2 };
-  const sorted = pedidos.slice().sort((a, b) => {
+  const rank = { analise: 0, aprovado: 1 };
+  const sorted = visiveis.slice().sort((a, b) => {
     const d = (rank[a.status] ?? 0) - (rank[b.status] ?? 0);
     return d !== 0 ? d : (b.createdAt || '').localeCompare(a.createdAt || '');
   });
