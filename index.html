@@ -2201,7 +2201,7 @@ function createSbClient() {
 }
 
 // App version — keep in sync with sw.js VERSION (used in account sheet for verification)
-const APP_VERSION = 'v62';
+const APP_VERSION = 'v63';
 
 let currentUser = null;
 let dataReady = false;
@@ -4892,8 +4892,8 @@ function emptyClientesState() {
 }
 
 // ═══════════════════════════════════════
-// PEDIDOS (widget) — Fase 1: UI + Aprovar/Recusar.
-// A fonte de dados (cache.pedidos) liga ao Supabase na Fase 2; por agora fica vazia.
+// PEDIDOS (widget) — Fase 2: pedidos vêm do Supabase; Aprovar/Recusar persistem;
+// cruzamento por telemóvel (aviso "mesmo nº, nome diferente" → confirmar antes).
 // ═══════════════════════════════════════
 function pedidoBadge(status) {
   const st = PEDIDO_STATUS[status] || PEDIDO_STATUS.analise;
@@ -4901,6 +4901,32 @@ function pedidoBadge(status) {
 }
 function pedidoTotalUnits(p) {
   return (p.items || []).reduce((s, i) => s + (parseInt(i.units) || 0), 0);
+}
+
+// Telemóvel normalizado (só dígitos, últimos 9) para cruzar com os clientes.
+function normalizePhone(s) { return String(s || '').replace(/\D/g, '').slice(-9); }
+
+// Aviso: número já registado num cliente COM NOME DIFERENTE. Devolve {name} ou null.
+function phoneWarning(p) {
+  const ph = normalizePhone(p && p.phone);
+  if (!ph) return null;
+  const pname = String((p && p.name) || '').trim().toLowerCase();
+  const m = (cache.customers || []).find(c =>
+    normalizePhone(c.phone) === ph && String(c.name || '').trim().toLowerCase() !== pname);
+  return m ? { name: m.name } : null;
+}
+
+// Grava alterações do pedido no Supabase (status/confirmado/nome) + atualiza cache.
+async function patchPedido(id, patch) {
+  const p = (cache.pedidos || []).find(x => x.id === id);
+  if (!p) return;
+  Object.assign(p, patch); // atualização local otimista
+  const dbPatch = {};
+  ['status', 'confirmado', 'name'].forEach(k => { if (k in patch) dbPatch[k] = patch[k]; });
+  if (Object.keys(dbPatch).length) {
+    const { error } = await sb.from('pedidos').update(dbPatch).eq('id', id);
+    if (error) { console.error('patchPedido:', error); showToast('Erro a gravar o pedido: ' + (error.message || error), 'error'); }
+  }
 }
 
 function refreshPedidos() {
@@ -4933,11 +4959,26 @@ function pedidoCard(p) {
   ).join(' ');
   const phone = p.phone ? ` · 📞 ${escapeHtml(p.phone)}` : '';
   const when  = p.createdAt ? fmtDate(String(p.createdAt).slice(0, 10)) : '';
-  const actions = status === 'analise' ? `
-    <div class="pay-row">
-      <button class="pay-btn cash" onclick="approvePedido('${p.id}')">✓ Aprovar</button>
-      <button class="pay-btn" style="background:var(--danger-light);color:var(--c-rose);" onclick="rejectPedido('${p.id}')">✕ Recusar</button>
-    </div>` : '';
+  // Regra do telemóvel: se o número já existe com outro nome, é preciso CONFIRMAR
+  // a identidade PRIMEIRO — só depois aparecem Aprovar/Recusar.
+  const warn = status === 'analise' ? phoneWarning(p) : null;
+  let actions = '';
+  if (warn && !p.confirmado) {
+    actions = `
+      <div style="margin-top:8px;padding:8px 10px;border-radius:10px;background:rgba(251,146,60,0.12);border:1px solid rgba(251,146,60,0.3);font-size:12.5px;color:#fb923c;line-height:1.4;">
+        ⚠️ Este número já está registado como <strong>${escapeHtml(warn.name)}</strong>.<br>É o mesmo cliente?
+      </div>
+      <div class="pay-row">
+        <button class="pay-btn cash" onclick="confirmPedidoSame('${p.id}')">✓ É o mesmo</button>
+        <button class="pay-btn" style="background:var(--danger-light);color:var(--c-rose);" onclick="confirmPedidoOther('${p.id}')">É outra pessoa</button>
+      </div>`;
+  } else if (status === 'analise') {
+    actions = `
+      <div class="pay-row">
+        <button class="pay-btn cash" onclick="approvePedido('${p.id}')">✓ Aprovar</button>
+        <button class="pay-btn" style="background:var(--danger-light);color:var(--c-rose);" onclick="rejectPedido('${p.id}')">✕ Recusar</button>
+      </div>`;
+  }
   return `<div class="list-item ${status === 'analise' ? 'pending' : ''}">
     <div class="list-item-head">
       <div style="display:flex;flex-direction:column;gap:4px;">
@@ -4963,10 +5004,31 @@ function emptyPedidosState() {
   </div>`;
 }
 
-// Aprovar → cria uma Venda PENDENTE (por pagar), reutilizando o fluxo de vendas.
+// "É o mesmo cliente" → adota o nome já registado (passa a associar-se a esse
+// cliente) e marca como confirmado. Depois já dá para Aprovar/Recusar.
+async function confirmPedidoSame(id) {
+  const p = (cache.pedidos || []).find(x => x.id === id);
+  if (!p) return;
+  const w = phoneWarning(p);
+  await patchPedido(id, { name: w ? w.name : p.name, confirmado: true });
+  refreshPedidos();
+  showToast('Cliente confirmado ✓', 'success');
+}
+
+// "É outra pessoa" → mantém o nome (cliente distinto com o mesmo número) e
+// marca como confirmado. Depois já dá para Aprovar/Recusar.
+async function confirmPedidoOther(id) {
+  await patchPedido(id, { confirmado: true });
+  refreshPedidos();
+  showToast('Registado como cliente diferente', 'success');
+}
+
+// Aprovar → cria uma Venda PENDENTE (por pagar), reutilizando o fluxo de vendas,
+// e cria/associa o cliente pelo telemóvel.
 async function approvePedido(id) {
   const p = (cache.pedidos || []).find(x => x.id === id);
   if (!p) return;
+  if (phoneWarning(p) && !p.confirmado) { showToast('Confirma primeiro a identidade do cliente', 'error'); return; }
   if (!confirm(`Aprovar o pedido de ${p.name || 'cliente'}?\nVai criar uma Venda pendente (por pagar).`)) return;
   try {
     const items = (p.items || []).map(i => ({
@@ -4976,19 +5038,24 @@ async function approvePedido(id) {
       payments: [],   // tudo por pagar → venda pendente
     })).filter(i => i.units > 0);
     if (items.length === 0) { showToast('Pedido sem itens válidos', 'error'); return; }
+    // Cliente: associa por nome; se não existir, cria (com o telemóvel do pedido).
+    const nameKey = (p.name || '').trim().toLowerCase();
+    let cust = (cache.customers || []).find(c => (c.name || '').trim().toLowerCase() === nameKey);
+    if (!cust && p.name) { cust = await addCustomerDB({ name: p.name.trim(), phone: p.phone || '' }); }
+    const customerName = cust ? cust.name : (p.name || '');
     const total = calcSaleBreakdown(items, true).total;
     const sale = {
       id: null,
       date: today(),
       items,
-      customer: p.name || '',
+      customer: customerName,
       totalPrice: total,
       notes: p.phone ? `Pedido do widget · 📞 ${p.phone}` : 'Pedido do widget',
       status: deriveSaleStatus(items, total),  // sem pagamentos → 'pending'
       applyPromo: true,
     };
     await addOrUpdateSale(sale);
-    p.status = 'aprovado';
+    await patchPedido(id, { status: 'aprovado' });
     refreshAll();
     showToast('Pedido aprovado → Venda pendente criada ✓', 'success');
     navigate('vendas');
@@ -4998,11 +5065,11 @@ async function approvePedido(id) {
   }
 }
 
-function rejectPedido(id) {
+async function rejectPedido(id) {
   const p = (cache.pedidos || []).find(x => x.id === id);
   if (!p) return;
   if (!confirm(`Recusar o pedido de ${p.name || 'cliente'}?`)) return;
-  p.status = 'recusado';
+  await patchPedido(id, { status: 'recusado' });
   refreshPedidos();
   showToast('Pedido recusado', 'success');
 }
