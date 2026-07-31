@@ -268,15 +268,20 @@
   function renderFlavors(model){
     flavors=model.flavors; currentModel=model; for(const k in qty)delete qty[k]; list.innerHTML='';
     flavors.forEach((f,i)=>{ qty[i]=0;
+      const out = (f.stock<=0);
+      const hint = f.stock>=999 ? 'Disponível'
+                 : out ? 'Esgotado'
+                 : (f.stock + (f.stock===1?' disponível':' disponíveis'));
       const row=document.createElement('div'); row.className='flavor'; row.id='fl'+i;
       row.style.animationDelay=(i*0.06)+'s';
+      if(out) row.style.opacity='.5';
       row.innerHTML=`<div style="display:flex;align-items:center;gap:10px"><span class="emo">${f.emo||'🍭'}</span>
           <div><span class="fname">${f.name}</span>
-          <span class="fhint">${f.stock>0?'Disponível':'Esgotado'}</span></div></div>
+          <span class="fhint">${hint}</span></div></div>
         <div class="stepper">
           <button class="minus" onclick="step(${i},-1)">−</button>
           <span class="qty zero" id="q${i}">0</span>
-          <button class="plus" onclick="step(${i},1)">+</button></div>`;
+          <button class="plus" onclick="step(${i},1)" ${out?'disabled style="opacity:.4;pointer-events:none"':''}>+</button></div>`;
       list.appendChild(row); });
     syncSend();
   }
@@ -315,6 +320,31 @@
   // (a RLS não deixa ler/alterar nada). O dono vê os pedidos na app de gestão.
   const SUPABASE_URL = 'https://aqsjgciiwmpodrdgakwf.supabase.co';
   const SUPABASE_KEY = 'sb_publishable_aAZMc4p55xSHZiaDVVo9Qw_oWcU15Hr';
+
+  // Lê o STOCK REAL (função pública stock_publico) e tranca as quantidades por
+  // sabor. Se falhar (ex.: função ainda não criada), mantém tudo disponível —
+  // nunca bloqueia a loja por causa de um erro de rede.
+  async function loadStock(){
+    try{
+      const res = await fetch(SUPABASE_URL + '/rest/v1/rpc/stock_publico', {
+        method:'POST',
+        headers:{ 'apikey':SUPABASE_KEY, 'Authorization':'Bearer '+SUPABASE_KEY, 'Content-Type':'application/json' },
+        body:'{}',
+      });
+      if(!res.ok) return;                 // sem função/erro → permissivo
+      const rows = await res.json();
+      if(!Array.isArray(rows)) return;
+      MODELS.forEach(m=>{
+        const modelName = m.name+' '+m.puffs;
+        m.flavors.forEach(f=>{
+          const hit = rows.find(r=> r.flavor===f.name && r.model===modelName);
+          f.stock = hit ? Math.max(0, parseInt(hit.disponivel)||0) : 0; // não listado = esgotado
+        });
+      });
+      renderFlavors(currentModel);
+    }catch(e){ console.warn('stock_publico falhou:', e); }
+  }
+  loadStock(); // agora sim: constantes já definidas → busca o stock real e tranca as quantidades
 
   async function submitOrder(){
     const btn = document.getElementById('sendOrder');
