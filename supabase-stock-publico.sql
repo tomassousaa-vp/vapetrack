@@ -16,9 +16,10 @@ set search_path = public
 as $$
   select f, m, sum(q)::int as disponivel
   from (
-    -- comprado: caixas × 10 por (sabor, modelo)
+    -- comprado: caixas × 10 + vapes soltos, por (sabor, modelo)
     select it->>'flavor' as f, it->>'model' as m,
-           (coalesce((it->>'boxes')::numeric, 0) * 10) as q
+           (coalesce((it->>'boxes')::numeric, 0) * 10
+            + coalesce((it->>'vapes')::numeric, 0)) as q
       from public.hauls h,
            lateral jsonb_array_elements(coalesce(h.items, '[]'::jsonb)) it
     union all
