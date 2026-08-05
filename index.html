@@ -1001,7 +1001,7 @@
       position: relative;
     }
     .item-card-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-    .item-card-bottom { display: grid; grid-template-columns: 1fr 46px; gap: 8px; margin-top: 10px; }
+    .item-card-bottom { display: grid; grid-template-columns: 1fr 1fr 46px; gap: 8px; margin-top: 10px; }
     .item-card .field-input { padding: 11px 14px; min-height: 46px; font-size: 14px; }
     .item-card-remove {
       background: rgba(251,113,133,0.14); color: var(--c-rose);
@@ -2201,7 +2201,7 @@ function createSbClient() {
 }
 
 // App version — keep in sync with sw.js VERSION (used in account sheet for verification)
-const APP_VERSION = 'v66';
+const APP_VERSION = 'v67';
 
 let currentUser = null;
 let dataReady = false;
@@ -2227,6 +2227,12 @@ const PEDIDO_STATUS = {
 // CONFIG
 // ═══════════════════════════════════════
 const VAPES_PER_BOX = 10;
+// Unidades totais de uma linha de haul = caixas × 10 + vapes soltos.
+// "vapes soltos" permite registar quantidades exatas (ex.: 5 de um sabor, 2 de
+// outro) sem ter de ser um múltiplo de 10. Hauls antigos não têm `vapes` → 0.
+function haulItemUnits(it) {
+  return (parseInt(it && it.boxes) || 0) * VAPES_PER_BOX + (parseInt(it && it.vapes) || 0);
+}
 const STATUS = {
   pending:   { label: 'Pendente', color: 'yellow', icon: 'clock' },
   cash:      { label: 'Dinheiro', color: 'green',  icon: 'cash' },
@@ -2748,10 +2754,10 @@ function getHaulModelPromoUsed(excludeSaleId = null) {
   haulsAsc.forEach(h => {
     const cap = {};
     (h.items || []).forEach(it => {
-      const boxes = parseInt(it.boxes) || 0;
-      if (boxes <= 0) return;
+      const units = haulItemUnits(it);
+      if (units <= 0) return;
       const key = (it.flavor || '') + '|' + (it.model || '');
-      cap[key] = (cap[key] || 0) + boxes * VAPES_PER_BOX;
+      cap[key] = (cap[key] || 0) + units;
     });
     remaining.set(h.id, cap);
   });
@@ -3168,7 +3174,7 @@ function getStockMap() {
       const f = (it.flavor || '').trim() || '(sem sabor)';
       const m = (it.model  || '').trim() || '(sem modelo)';
       map[f] = map[f] || {};
-      map[f][m] = (map[f][m] || 0) + ((parseInt(it.boxes) || 0) * VAPES_PER_BOX);
+      map[f][m] = (map[f][m] || 0) + haulItemUnits(it);
     });
   });
   getSales().forEach(s => {
@@ -3247,10 +3253,10 @@ function computeHaulStats() {
   haulsAsc.forEach(h => {
     const cap = {};
     (h.items || []).forEach(it => {
-      const boxes = parseInt(it.boxes) || 0;
-      if (boxes <= 0) return; // skip empty rows to avoid phantom keys
+      const units = haulItemUnits(it);
+      if (units <= 0) return; // skip empty rows to avoid phantom keys
       const key = (it.flavor || '') + '|' + (it.model || '');
-      cap[key] = (cap[key] || 0) + boxes * VAPES_PER_BOX;
+      cap[key] = (cap[key] || 0) + units;
     });
     const totalVapes = Object.values(cap).reduce((s, v) => s + v, 0);
     stats.set(h.id, {
@@ -3656,12 +3662,14 @@ function syncCatalogChipsActive() {
     const matching = items.filter(it =>
       it.flavor === chip.dataset.flavor && it.model === chip.dataset.model
     );
-    const totalBoxes = matching.reduce((s, it) => s + it.boxes, 0);
-    chip.classList.toggle('active', totalBoxes > 0);
+    const totalBoxes = matching.reduce((s, it) => s + (parseInt(it.boxes) || 0), 0);
+    const looseVapes = matching.reduce((s, it) => s + (parseInt(it.vapes) || 0), 0);
+    chip.classList.toggle('active', totalBoxes > 0 || looseVapes > 0);
     const span = chip.querySelector('.chip-stock');
     if (span) {
-      if (totalBoxes > 0) {
-        span.textContent = totalBoxes + 'cx';
+      const parts = [totalBoxes ? totalBoxes + 'cx' : '', looseVapes ? looseVapes + 'v' : ''].filter(Boolean);
+      if (parts.length) {
+        span.textContent = parts.join('+');
         span.style.display = 'inline-flex';
       } else {
         span.style.display = 'none';
@@ -3678,7 +3686,7 @@ function renderItemRows(items) {
 
 function addItemRow(item) {
   if (item instanceof Event) item = null;
-  item = item || { flavor:'', model:'', boxes:'' };
+  item = item || { flavor:'', model:'', boxes:'', vapes:'' };
 
   const wrap = document.getElementById('items-wrap');
   const idx = wrap.children.length + 1;
@@ -3692,7 +3700,8 @@ function addItemRow(item) {
       <input class="field-input item-model"  type="text" list="lib-models"  placeholder="Modelo" value="${escapeHtml(item.model)}" autocomplete="off">
     </div>
     <div class="item-card-bottom">
-      <input class="field-input item-boxes" type="number" min="1" step="1" inputmode="numeric" placeholder="Caixas" value="${item.boxes || ''}">
+      <input class="field-input item-boxes" type="number" min="0" step="1" inputmode="numeric" placeholder="Caixas (×10)" value="${item.boxes || ''}">
+      <input class="field-input item-vapes" type="number" min="0" step="1" inputmode="numeric" placeholder="Vapes soltos" value="${item.vapes || ''}">
       <button type="button" class="item-card-remove" aria-label="Remover">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
@@ -3723,9 +3732,10 @@ function readItemRows() {
   rows.forEach(row => {
     const flavor = row.querySelector('.item-flavor').value.trim();
     const model  = row.querySelector('.item-model').value.trim();
-    const boxes  = parseInt(row.querySelector('.item-boxes').value);
-    if ((flavor || model) && boxes > 0) {
-      items.push({ flavor, model, boxes });
+    const boxes  = parseInt(row.querySelector('.item-boxes').value) || 0;
+    const vapes  = parseInt(row.querySelector('.item-vapes')?.value) || 0;
+    if ((flavor || model) && (boxes > 0 || vapes > 0)) {
+      items.push({ flavor, model, boxes, vapes });
     }
   });
   return items;
@@ -3786,9 +3796,11 @@ function getActiveTierInfo(items) {
 
 function updateHaulTotals() {
   const items = readItemRows();
-  const totalBoxes = items.reduce((s, it) => s + it.boxes, 0);
-  const totalVapes = totalBoxes * VAPES_PER_BOX;
-  document.getElementById('haul-total-boxes').textContent = totalBoxes + ' caixa(s)';
+  const totalBoxes = items.reduce((s, it) => s + (parseInt(it.boxes) || 0), 0);
+  const looseVapes = items.reduce((s, it) => s + (parseInt(it.vapes) || 0), 0);
+  const totalVapes = totalBoxes * VAPES_PER_BOX + looseVapes;
+  document.getElementById('haul-total-boxes').textContent =
+    totalBoxes + ' caixa(s)' + (looseVapes ? ' + ' + looseVapes + ' solto(s)' : '');
   document.getElementById('haul-total-vapes').textContent = totalVapes + ' vapes';
 
   // Auto-fill price if not manually edited
@@ -4573,14 +4585,18 @@ function haulDetailHtml(h, stat) {
     const items = byModel[model];
     const rows = items.map(it => {
       const key = (it.flavor || '') + '|' + (it.model || '');
-      const initialVapes = (parseInt(it.boxes) || 0) * VAPES_PER_BOX;
+      const initialVapes = haulItemUnits(it);
       const remainItem = stat?.remaining?.[key] ?? initialVapes;
       const cls = remainItem <= 0 ? 'out' : (remainItem <= 2 ? 'low' : 'good');
       const label = remainItem <= 0 ? 'ESGOTADO' : `${remainItem}/${initialVapes} vapes`;
+      const boxesN = parseInt(it.boxes) || 0;
+      const vapesN = parseInt(it.vapes) || 0;
+      const qtyLabel = [boxesN ? boxesN + 'cx' : '', vapesN ? vapesN + ' solto(s)' : '']
+        .filter(Boolean).join(' + ') || '0';
       return `<div class="flat-stock-row ${remainItem <= 0 ? 'out' : ''}">
         <div class="flat-stock-info">
           <span class="flat-stock-flavor">${escapeHtml(it.flavor || '?')}</span>
-          <span style="color:var(--text-subtle);font-size:11px;margin-left:6px;">(${it.boxes}cx)</span>
+          <span style="color:var(--text-subtle);font-size:11px;margin-left:6px;">(${qtyLabel})</span>
         </div>
         <span class="flat-stock-qty ${cls}">${label}</span>
       </div>`;
@@ -5665,10 +5681,10 @@ function computeSalesByHaul() {
   haulsAsc.forEach(h => {
     const cap = {};
     (h.items || []).forEach(it => {
-      const boxes = parseInt(it.boxes) || 0;
-      if (boxes <= 0) return;
+      const units = haulItemUnits(it);
+      if (units <= 0) return;
       const key = (it.flavor || '') + '|' + (it.model || '');
-      cap[key] = (cap[key] || 0) + boxes * VAPES_PER_BOX;
+      cap[key] = (cap[key] || 0) + units;
     });
     remaining.set(h.id, cap);
   });
