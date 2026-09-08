@@ -1,5 +1,5 @@
 // VapeTrack Service Worker — offline support + auto-update
-const VERSION = 'vapetrack-v68-preco-exato';
+const VERSION = 'vapetrack-v67-vapes-soltos';
 const CACHE = `vt-cache-${VERSION}`;
 const ASSETS = [
   '/',

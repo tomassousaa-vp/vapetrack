@@ -2201,7 +2201,7 @@ function createSbClient() {
 }
 
 // App version — keep in sync with sw.js VERSION (used in account sheet for verification)
-const APP_VERSION = 'v68';
+const APP_VERSION = 'v67';
 
 let currentUser = null;
 let dataReady = false;
@@ -2390,7 +2390,6 @@ function saleToDB(s) {
     flavor:   (i.flavor || '').trim(),
     model:    (i.model  || '').trim(),
     units:    parseInt(i.units) || 0,
-    price:    parseFloat(i.price) || 0,   // preço EXATO por vape (0 = sem preço explícito)
     payments: itemPayments(i),
   })).filter(i => i.units > 0);
 
@@ -2434,7 +2433,7 @@ function saleFromDB(row) {
       // very old rows: a fully cash/mbway sale ⇒ every unit paid with that method
       payments = legacyMethod ? [{ units, perUnit: null, method: legacyMethod }] : [];
     }
-    return { flavor: i.flavor || '', model: i.model || '', units, price: parseFloat(i.price) || 0, payments };
+    return { flavor: i.flavor || '', model: i.model || '', units, payments };
   });
   const totalUnits = items.reduce((sum, i) => sum + i.units, 0);
   return {
@@ -2510,27 +2509,18 @@ function deriveSaleStatus(items, totalPrice) {
   const list = Array.isArray(items) ? items : [];
   let totalUnits = 0;
   list.forEach(i => { totalUnits += parseInt(i.units) || 0; });
-  // Total exato: usa o preço por vape quando existe (nunca média).
-  let effTotal = (totalPrice != null && totalPrice > 0) ? totalPrice : 0;
-  if (!(effTotal > 0)) {
-    effTotal = list.reduce((s, i) => s + (parseInt(i.units) || 0) * (parseFloat(i.price) || 0), 0);
-  }
-  const avg = (effTotal > 0 && totalUnits > 0) ? effTotal / totalUnits : 0;
+  const avg = (totalPrice != null && totalPrice > 0 && totalUnits > 0) ? totalPrice / totalUnits : 0;
   let paidAmt = 0, paidUnits = 0;
   const methods = new Set();
-  list.forEach(i => {
-    const iPrice = parseFloat(i.price) || 0;
-    const iVal = iPrice > 0 ? iPrice : avg; // valor por unidade desta linha
-    itemPayments(i).forEach(p => {
-      const a = paymentAmount(p, iVal);
-      paidAmt += a; paidUnits += paymentUnits(p, iVal);
-      if (a > 0.0001) methods.add(p.method);
-    });
-  });
+  list.forEach(i => itemPayments(i).forEach(p => {
+    const a = paymentAmount(p, avg);
+    paidAmt += a; paidUnits += paymentUnits(p, avg);
+    if (a > 0.0001) methods.add(p.method);
+  }));
   if (totalUnits <= 0) return 'pending';
   if (paidAmt <= 0.0001 && paidUnits <= 0.0001) return 'pending';
-  const fully = (effTotal > 0)
-    ? paidAmt >= effTotal - 0.01
+  const fully = (totalPrice != null && totalPrice > 0)
+    ? paidAmt >= totalPrice - 0.01
     : paidUnits >= totalUnits - 0.0001;
   if (!fully) return 'partial';
   return methods.size === 1 ? [...methods][0] : 'paidmixed';
@@ -2576,14 +2566,9 @@ function priceSale(s) {
   const evenly = totalUnits > 0 ? saleTotal / totalUnits : 0;
   const perItem = items.map(i => {
     const units = parseInt(i.units) || 0;
-    const explicit = parseFloat(i.price) || 0; // preço EXATO por vape (sem médias)
     const prices = [];
-    if (explicit > 0) {
-      for (let k = 0; k < units; k++) prices.push(explicit);
-    } else {
-      const p = pool && pool[i.model];
-      for (let k = 0; k < units; k++) prices.push(p && p.length ? p.shift() : evenly);
-    }
+    const p = pool && pool[i.model];
+    for (let k = 0; k < units; k++) prices.push(p && p.length ? p.shift() : evenly);
     // Valorizar pagamentos. Unidades sem preço explícito tomam os vapes mais baratos.
     const queue = prices.slice();
     const by = { cash: 0, mbway: 0 };
@@ -2604,10 +2589,7 @@ function priceSale(s) {
     cash:  perItem.reduce((a, i) => a + i.by.cash,  0),
     mbway: perItem.reduce((a, i) => a + i.by.mbway, 0),
   };
-  // Com preços EXATOS por vape, o total da venda é a soma deles (nunca média).
-  const anyExplicit = items.some(i => (parseFloat(i.price) || 0) > 0);
-  const totalOut = anyExplicit ? perItem.reduce((a, i) => a + i.total, 0) : saleTotal;
-  return { perItem, total: totalOut, paid, pending: Math.max(0, totalOut - paid), by };
+  return { perItem, total: saleTotal, paid, pending: Math.max(0, saleTotal - paid), by };
 }
 
 function salePaidUnits(s)   { const avg = saleUnitPrice(s); return (s.items || []).reduce((sum, i) => sum + itemPaidUnits(i, avg), 0); }
@@ -3988,7 +3970,7 @@ function renderSaleItemRows(items) {
 
 function addSaleItemRow(item) {
   if (item instanceof Event) item = null;
-  item = item || { flavor:'', model:'', units:'', price:'' };
+  item = item || { flavor:'', model:'', units:'' };
 
   const payments = itemPayments(item);
   // Open the Divisão editor when the item has a value split (multiple payments
@@ -4011,7 +3993,6 @@ function addSaleItemRow(item) {
     </div>
     <div class="item-card-bottom">
       <input class="field-input sale-item-units" type="number" min="1" step="1" inputmode="numeric" placeholder="Vapes" value="${item.units || ''}">
-      <input class="field-input sale-item-price" type="number" min="0" step="1" inputmode="numeric" placeholder="€ preço/un" value="${item.price || ''}">
       <button type="button" class="item-card-remove" aria-label="Remover">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
@@ -4031,41 +4012,13 @@ function addSaleItemRow(item) {
 
   card.querySelectorAll('.item-card-grid input, .sale-item-units').forEach(inp => inp.addEventListener('input', debouncedUpdateSaleTotals));
   const refreshPaySum = () => updateSaleItemPaySummary(card);
-  // Preço EXATO por vape: se veio um valor guardado, respeita-o (não sugerir por cima).
-  if ((parseFloat(item.price) || 0) > 0) card._priceEdited = true;
-  const priceInp = card.querySelector('.sale-item-price');
-  priceInp.addEventListener('input', () => { card._priceEdited = true; debouncedUpdateSaleTotals(); refreshPaySum(); });
-  // Sugerir o preço quando muda o sabor/modelo/quantidade (enquanto não for editado à mão).
-  const maybeSuggest = () => { suggestSalePrice(card); refreshPaySum(); };
-  card.querySelector('.sale-item-flavor').addEventListener('input', maybeSuggest);
-  card.querySelector('.sale-item-model').addEventListener('input', maybeSuggest);
   card.querySelector('.sale-item-units').addEventListener('input', refreshPaySum);
   card.querySelector('.sale-item-paid').addEventListener('input', refreshPaySum);
   card.querySelector('.sale-item-method').addEventListener('change', () => { debouncedUpdateSaleTotals(); refreshPaySum(); });
   card.querySelector('.sale-item-split-toggle').addEventListener('click', () => toggleSplitMode(card));
   card.querySelector('.item-card-remove').addEventListener('click', () => removeSaleItemRow(card));
   if (wantSplit) toggleSplitMode(card, true);
-  suggestSalePrice(card); // sugestão inicial (ex.: item vindo de um chip do catálogo)
   refreshPaySum();
-}
-
-// Sugere o preço/un a partir dos escalões (valor redondo), sem sobrepor edição manual.
-function suggestSalePrice(card) {
-  if (!card || card._priceEdited) return;
-  const priceInp = card.querySelector('.sale-item-price');
-  if (!priceInp) return;
-  const flavor = (card.querySelector('.sale-item-flavor')?.value || '').trim();
-  const model  = (card.querySelector('.sale-item-model')?.value  || '').trim();
-  const units  = parseInt(card.querySelector('.sale-item-units')?.value) || 0;
-  if (!model || units <= 0) return;
-  const promoEl = document.getElementById('sale-apply-promo');
-  const applyPromo = !!(promoEl && promoEl.checked);
-  let per = 0;
-  try {
-    const t = calcSaleTotalFromItems([{ flavor, model, units }], applyPromo, _openSheetEditId || null);
-    if (t > 0) per = Math.round(t / units);
-  } catch (e) {}
-  if (per > 0) { priceInp.value = String(per); debouncedUpdateSaleTotals(); }
 }
 
 // Average € per vape in the current form (sale total ÷ total vapes). Usado só
@@ -4087,7 +4040,6 @@ function formPriceSale() {
       flavor: (c.querySelector('.sale-item-flavor')?.value || '').trim(),
       model:  (c.querySelector('.sale-item-model')?.value || '').trim(),
       units,
-      price:  parseFloat(c.querySelector('.sale-item-price')?.value) || 0,
       payments: itemPayments({ units, payments: readItemPaymentsFromCard(c) }),
     };
   });
@@ -4225,10 +4177,9 @@ function readSaleItemRows() {
     const flavor = row.querySelector('.sale-item-flavor').value.trim();
     const model  = row.querySelector('.sale-item-model').value.trim();
     const units  = parseInt(row.querySelector('.sale-item-units').value);
-    const price  = parseFloat(row.querySelector('.sale-item-price')?.value) || 0;
     if ((flavor || model) && units > 0) {
       const payments = itemPayments({ units, payments: readItemPaymentsFromCard(row) });
-      items.push({ flavor, model, units, price, payments });
+      items.push({ flavor, model, units, payments });
     }
   });
   return items;
@@ -4251,41 +4202,33 @@ function updateSaleTotals() {
     promoHintEl.style.color = applyPromo ? 'var(--green)' : 'var(--text-muted)';
   }
 
-  // Total da venda: com preços EXATOS por vape é a SOMA deles (nunca média/cêntimos).
-  const anyPrice = items.some(it => (parseFloat(it.price) || 0) > 0);
-  const exactTotal = items.reduce((s, it) => s + (parseInt(it.units) || 0) * (parseFloat(it.price) || 0), 0);
-  const priceInput = document.getElementById('sale-price');
-  const hint = document.getElementById('sale-price-hint');
+  // Auto-fill total price using pricing (if not manually edited)
+  if (!salePriceManuallyEdited) {
+    const auto = calcSaleTotalFromItems(items, applyPromo, _openSheetEditId);
+    if (auto > 0) {
+      document.getElementById('sale-price').value = auto.toFixed(2);
+    }
+  }
 
-  if (anyPrice) {
-    priceInput.value = exactTotal ? String(exactTotal) : '';
-    if (hint) {
-      hint.innerHTML = `✓ Soma dos preços por vape = <strong>${fmt(exactTotal)}</strong>`;
-      hint.style.color = 'var(--green)';
-    }
-  } else {
-    // Venda antiga / sem preço por vape: comportamento anterior (escalões).
-    if (!salePriceManuallyEdited) {
-      const auto = calcSaleTotalFromItems(items, applyPromo, _openSheetEditId);
-      if (auto > 0) priceInput.value = auto.toFixed(2);
-    }
-    if (hint) {
-      if (salePriceManuallyEdited) {
-        hint.innerHTML = 'Preço manual (promoção/desconto)';
-        hint.style.color = 'var(--accent)';
+  // Show price hint with breakdown
+  const hint = document.getElementById('sale-price-hint');
+  if (hint) {
+    if (salePriceManuallyEdited) {
+      hint.innerHTML = 'Preço manual (promoção/desconto)';
+      hint.style.color = 'var(--accent)';
+    } else {
+      const bd = calcSaleBreakdown(items, applyPromo, _openSheetEditId);
+      if (bd.total > 0) {
+        // Build breakdown lines per model
+        const parts = bd.perModel.map(pm => {
+          const txt = breakdownToText(pm.lines);
+          return bd.perModel.length > 1 ? `${pm.model}: ${txt}` : txt;
+        });
+        hint.innerHTML = `✓ ${parts.join(' · ')} = <strong>${fmt(bd.total)}</strong>`;
+        hint.style.color = 'var(--green)';
       } else {
-        const bd = calcSaleBreakdown(items, applyPromo, _openSheetEditId);
-        if (bd.total > 0) {
-          const parts = bd.perModel.map(pm => {
-            const txt = breakdownToText(pm.lines);
-            return bd.perModel.length > 1 ? `${pm.model}: ${txt}` : txt;
-          });
-          hint.innerHTML = `✓ ${parts.join(' · ')} = <strong>${fmt(bd.total)}</strong>`;
-          hint.style.color = 'var(--green)';
-        } else {
-          hint.textContent = 'Valor total desta venda';
-          hint.style.color = 'var(--text-subtle)';
-        }
+        hint.textContent = 'Valor total desta venda';
+        hint.style.color = 'var(--text-subtle)';
       }
     }
   }
@@ -4789,23 +4732,13 @@ function saleCard(s) {
     <div class="list-item-meta">
       <span><strong>${s.units}</strong> vape(s)</span>
       ${(() => {
-        const its = s.items || [];
-        // Preços EXATOS por vape → mostra-os tal e qual (sem médias).
-        if (its.some(it => (parseFloat(it.price) || 0) > 0)) {
-          const parts = its.map(it => {
-            const pr = parseFloat(it.price) || 0;
-            const u  = parseInt(it.units) || 0;
-            return u > 1 ? `${u}×${fmt(pr)}` : fmt(pr);
-          });
-          return `<span style="color:var(--text-subtle);">${parts.join(' · ')}</span>`;
-        }
-        const bd = calcSaleBreakdown(its, s.applyPromo === true, s.id);
+        const bd = calcSaleBreakdown(s.items || [], s.applyPromo === true, s.id);
         if (bd.total > 0 && Math.abs(bd.total - (s.totalPrice || 0)) < 0.5) {
           // Auto price applies (within €0.50 of saved) — show breakdown
           const parts = bd.perModel.map(pm => breakdownToText(pm.lines));
           return `<span style="color:var(--text-subtle);">${parts.join(' · ')}</span>`;
         }
-        // Manual / promo price (venda antiga) — show average
+        // Manual / promo price — show average
         return `<span style="color:var(--accent);">${fmt(s.totalPrice / Math.max(s.units, 1))}/un. média</span>`;
       })()}
     </div>
