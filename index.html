@@ -1873,9 +1873,16 @@
       </div>
 
       <div class="field">
-        <label class="field-label" for="sale-price">Preço total recebido (€)</label>
-        <input class="field-input" type="number" id="sale-price" placeholder="Ex: 75.00" min="0" step="0.01" inputmode="decimal">
+        <label class="field-label" for="sale-price">Valor total da venda (€)</label>
+        <input class="field-input" type="number" id="sale-price" placeholder="Ex: 35" min="0" step="0.01" inputmode="decimal">
         <span class="field-hint" id="sale-price-hint">Valor total desta venda</span>
+      </div>
+
+      <div class="field">
+        <label class="field-label">Pagamento — divide como quiseres</label>
+        <div id="sale-payments"></div>
+        <button type="button" id="sale-add-pay" style="background:none;border:1px dashed var(--border);border-radius:8px;color:var(--accent);font:inherit;font-size:12px;font-weight:600;cursor:pointer;padding:8px 12px;margin-top:2px;">+ Adicionar pagamento</button>
+        <div class="field-hint" id="sale-pay-summary" style="margin-top:8px;">Divide o valor por Dinheiro / MB Way como quiseres — só tem de somar o total.</div>
       </div>
 
       <div class="field">
@@ -1883,11 +1890,6 @@
         <input class="field-input" type="text" id="sale-customer" list="customers-datalist" placeholder="Nome do cliente" autocomplete="off">
         <datalist id="customers-datalist"></datalist>
         <span class="field-hint" id="sale-customer-hint">Guardado automaticamente para próximas vendas</span>
-      </div>
-
-      <div class="info-block" style="background:var(--yellow-light);border-color:rgba(245,158,11,0.3);">
-        <svg viewBox="0 0 24 24" fill="none" stroke="#F59E0B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-        <span style="color:var(--text);">Vai ficar como <strong style="color:var(--yellow);">pendente</strong>. Marca como paga (Dinheiro / MB Way) depois.</span>
       </div>
 
       <button type="submit" class="btn btn-primary">Registar Venda</button>
@@ -2201,7 +2203,7 @@ function createSbClient() {
 }
 
 // App version — keep in sync with sw.js VERSION (used in account sheet for verification)
-const APP_VERSION = 'v69';
+const APP_VERSION = 'v70';
 
 let currentUser = null;
 let dataReady = false;
@@ -3949,11 +3951,18 @@ function prepareSaleForm(editId) {
     // Restore promo choice from saved sale (undefined = legacy → treat as false)
     if (promoEl) promoEl.checked = (s.applyPromo === true);
     renderSaleItemRows(s.items && s.items.length ? s.items : [{ flavor:'', model:'', units:'' }]);
+    // Reconstrói a divisão de pagamento da venda (soma por método, do estado guardado).
+    const by = priceSale(s).by;
+    const seed = [];
+    if (by.cash  > 0.005) seed.push({ amount: Math.round(by.cash  * 100) / 100, method: 'cash'  });
+    if (by.mbway > 0.005) seed.push({ amount: Math.round(by.mbway * 100) / 100, method: 'mbway' });
+    renderSalePayments(seed);
   } else {
     document.getElementById('sheet-sale-title').textContent = 'Nova Venda';
     document.getElementById('sale-id').value = '';
     document.getElementById('sale-date').value = today();
     renderSaleItemRows([]);
+    renderSalePayments([]);
   }
   refreshCustomersDatalist();
   updateSaleTotals();
@@ -3972,53 +3981,103 @@ function addSaleItemRow(item) {
   if (item instanceof Event) item = null;
   item = item || { flavor:'', model:'', units:'' };
 
-  const payments = itemPayments(item);
-  // Open the Divisão editor when the item has a value split (multiple payments
-  // or any € / priced payment).
-  const wantSplit = payments.length > 1 || payments.some(p => p.amount != null || p.perUnit != null);
-  const quickPaid = payments.reduce((s, p) => s + (p.units || 0), 0);
-  const quickMethod = payments[0] ? payments[0].method : 'cash';
-
   const wrap = document.getElementById('sale-items-wrap');
   const idx = wrap.children.length + 1;
 
   const card = document.createElement('div');
   card.className = 'item-card';
-  card._initialPayments = payments;
   card.innerHTML = `
     <div class="item-card-num">${idx}</div>
     <div class="item-card-grid">
       <input class="field-input sale-item-flavor" type="text" list="lib-flavors" placeholder="Sabor" value="${escapeHtml(item.flavor)}" autocomplete="off">
       <input class="field-input sale-item-model"  type="text" list="lib-models"  placeholder="Modelo" value="${escapeHtml(item.model)}" autocomplete="off">
     </div>
-    <div class="item-card-bottom">
+    <div class="item-card-bottom" style="grid-template-columns:1fr 46px;">
       <input class="field-input sale-item-units" type="number" min="1" step="1" inputmode="numeric" placeholder="Vapes" value="${item.units || ''}">
       <button type="button" class="item-card-remove" aria-label="Remover">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
     </div>
-    <div class="item-card-pay">
-      <input class="field-input sale-item-paid" type="number" min="0" step="1" inputmode="numeric" placeholder="Já pagas" value="${quickPaid || ''}">
-      <select class="field-input sale-item-method">
-        <option value="cash"${quickMethod !== 'mbway' ? ' selected' : ''}>💵 Dinheiro</option>
-        <option value="mbway"${quickMethod === 'mbway' ? ' selected' : ''}>📱 MB Way</option>
-      </select>
-    </div>
-    <button type="button" class="sale-item-split-toggle" style="background:none;border:0;color:var(--accent);font:inherit;font-size:12px;font-weight:600;cursor:pointer;padding:4px 0;text-align:left;">⊟ Dividir pagamento (€)</button>
-    <div class="sale-item-splits" style="display:none;"></div>
-    <div class="item-card-paysum"></div>
   `;
   wrap.appendChild(card);
 
-  card.querySelectorAll('.item-card-grid input, .sale-item-units').forEach(inp => inp.addEventListener('input', debouncedUpdateSaleTotals));
-  const refreshPaySum = () => updateSaleItemPaySummary(card);
-  card.querySelector('.sale-item-units').addEventListener('input', refreshPaySum);
-  card.querySelector('.sale-item-paid').addEventListener('input', refreshPaySum);
-  card.querySelector('.sale-item-method').addEventListener('change', () => { debouncedUpdateSaleTotals(); refreshPaySum(); });
-  card.querySelector('.sale-item-split-toggle').addEventListener('click', () => toggleSplitMode(card));
+  card.querySelectorAll('input').forEach(inp => inp.addEventListener('input', debouncedUpdateSaleTotals));
   card.querySelector('.item-card-remove').addEventListener('click', () => removeSaleItemRow(card));
-  if (wantSplit) toggleSplitMode(card, true);
-  refreshPaySum();
+}
+
+// ── Pagamento ao nível da VENDA (uma divisão para a venda toda) ────────────
+function addSalePayRow(pay) {
+  pay = pay || { amount:'', method:'cash' };
+  const wrap = document.getElementById('sale-payments');
+  if (!wrap) return;
+  const row = document.createElement('div');
+  row.className = 'sale-pay-row';
+  row.style.cssText = 'display:flex;gap:6px;align-items:center;margin-bottom:6px;';
+  const amt = (pay.amount != null && pay.amount !== '') ? pay.amount : '';
+  row.innerHTML = `
+    <input class="field-input sale-pay-amount" type="number" min="0" step="1" inputmode="numeric" placeholder="€ valor" value="${amt}" style="flex:1;min-width:0;">
+    <select class="field-input sale-pay-method" style="flex:1;min-width:0;">
+      <option value="cash"${pay.method !== 'mbway' ? ' selected' : ''}>💵 Dinheiro</option>
+      <option value="mbway"${pay.method === 'mbway' ? ' selected' : ''}>📱 MB Way</option>
+    </select>
+    <button type="button" class="sale-pay-remove" aria-label="Remover" style="flex:0 0 auto;background:none;border:0;color:var(--text-subtle);font-size:20px;line-height:1;cursor:pointer;padding:0 4px;">×</button>
+  `;
+  wrap.appendChild(row);
+  row.querySelector('.sale-pay-amount').addEventListener('input', updateSalePaySummary);
+  row.querySelector('.sale-pay-method').addEventListener('change', updateSalePaySummary);
+  row.querySelector('.sale-pay-remove').addEventListener('click', () => { row.remove(); updateSalePaySummary(); });
+}
+
+function readSalePayments() {
+  const out = [];
+  document.querySelectorAll('#sale-payments .sale-pay-row').forEach(r => {
+    const amt = parseFloat(r.querySelector('.sale-pay-amount').value);
+    if (!(amt > 0)) return;
+    const method = r.querySelector('.sale-pay-method').value === 'mbway' ? 'mbway' : 'cash';
+    out.push({ amount: amt, method });
+  });
+  return out;
+}
+
+function renderSalePayments(payments) {
+  const wrap = document.getElementById('sale-payments');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+  const list = (payments || []).filter(p => (parseFloat(p.amount) || 0) > 0);
+  if (list.length === 0) addSalePayRow({ amount:'', method:'cash' });
+  else list.forEach(p => addSalePayRow(p));
+  updateSalePaySummary();
+}
+
+// "Pago X · Falta Y" — só falta se o pago for MENOR que o total. Qualquer
+// combinação de métodos serve, desde que some ao total. Sem "falta" por vape.
+function updateSalePaySummary() {
+  const el = document.getElementById('sale-pay-summary');
+  if (!el) return;
+  const total = parseFloat(document.getElementById('sale-price')?.value) || 0;
+  const pays = readSalePayments();
+  const paid = pays.reduce((s, p) => s + p.amount, 0);
+  const falta = Math.max(0, total - paid);
+  const over  = Math.max(0, paid - total);
+  const mparts = [];
+  const byCash  = pays.filter(p => p.method === 'cash').reduce((s,p)=>s+p.amount,0);
+  const byMbway = pays.filter(p => p.method === 'mbway').reduce((s,p)=>s+p.amount,0);
+  if (byCash  > 0) mparts.push(fmt(byCash)  + ' 💵');
+  if (byMbway > 0) mparts.push(fmt(byMbway) + ' 📱');
+  const meta = mparts.length ? ` (${mparts.join(' · ')})` : '';
+  if (paid <= 0) {
+    el.textContent = total > 0 ? `Falta ${fmt(total)} — divide por método` : 'Divide o valor por Dinheiro / MB Way.';
+    el.style.color = 'var(--text-muted)';
+  } else if (falta > 0.001) {
+    el.textContent = `Pago ${fmt(paid)}${meta} · Falta ${fmt(falta)}`;
+    el.style.color = '#fb923c';
+  } else if (over > 0.001) {
+    el.textContent = `Pago ${fmt(paid)}${meta} · ${fmt(over)} a mais`;
+    el.style.color = '#fb923c';
+  } else {
+    el.textContent = `Pago ${fmt(paid)}${meta} ✓ tudo pago`;
+    el.style.color = 'var(--c-emerald)';
+  }
 }
 
 // Average € per vape in the current form (sale total ÷ total vapes). Usado só
@@ -4178,8 +4237,7 @@ function readSaleItemRows() {
     const model  = row.querySelector('.sale-item-model').value.trim();
     const units  = parseInt(row.querySelector('.sale-item-units').value);
     if ((flavor || model) && units > 0) {
-      const payments = itemPayments({ units, payments: readItemPaymentsFromCard(row) });
-      items.push({ flavor, model, units, payments });
+      items.push({ flavor, model, units });
     }
   });
   return items;
@@ -4234,6 +4292,7 @@ function updateSaleTotals() {
   }
 
   syncSaleCatalogChipsActive();
+  updateSalePaySummary();
 }
 
 function populateSaleCatalogPicker() {
@@ -4374,13 +4433,25 @@ async function handleSaleSubmit(e) {
     const price    = parseFloat(document.getElementById('sale-price').value);
     const date     = document.getElementById('sale-date').value;
     const notes    = '';
+    // Pagamento ao nível da VENDA: qualquer combinação que some ao total.
+    // Guardamos os pagamentos na 1ª linha (portador) — a valorização é global.
+    const salePayments = readSalePayments();
 
     if (items.length === 0) {
       showToast('Adiciona pelo menos um vape vendido', 'error');
       return;
     }
-    if (!price || price < 0) { showToast('Indica o preço', 'error'); return; }
+    if (!price || price < 0) { showToast('Indica o valor total', 'error'); return; }
     if (!date)   { showToast('Indica a data', 'error'); return; }
+
+    const paidSum = salePayments.reduce((s, p) => s + p.amount, 0);
+    if (paidSum - price > 0.01) {
+      showToast(`Pagamento (${fmt(paidSum)}) é maior que o total (${fmt(price)})`, 'error');
+      return;
+    }
+    if (items.length && salePayments.length) {
+      items[0] = { ...items[0], payments: salePayments };
+    }
 
     // If customer name is new (not in master list), confirm + create
     let shouldCreateCustomer = false;
@@ -4418,7 +4489,8 @@ async function handleSaleSubmit(e) {
       await addOrUpdateSale(data);
       closeSheet();
       refreshAll();
-      showToast(id ? 'Venda atualizada' : 'Venda registada (pendente) ✓', 'success');
+      const fullyPaid = paidSum >= price - 0.01;
+      showToast(id ? 'Venda atualizada' : (fullyPaid ? 'Venda registada (paga) ✓' : 'Venda registada (pendente) ✓'), 'success');
     } finally {
       if (submitBtn) { submitBtn.disabled = false; submitBtn.innerHTML = 'Registar Venda'; }
     }
@@ -4437,13 +4509,16 @@ async function markSalePaid(id, method) {
     const sale = getSales().find(s => s.id === id);
     if (!sale) return;
     const m = method === 'mbway' ? 'mbway' : 'cash';
-    // Keep any existing payments (e.g. a Divisão) and top up each item's REAL
-    // remaining € (preço de escalão real, não média) com o método escolhido.
+    // Junta o que FALTA (ao nível da venda) como UM pagamento, na 1ª linha,
+    // com o método escolhido. Nada de médias nem por vape.
     const pr = priceSale(sale);
+    const rest = Math.max(0, pr.pending);
+    if (rest <= 0.0001) return;
     const items = (sale.items || []).map((i, idx) => {
       const existing = itemPayments(i);
-      const rest = Math.max(0, (pr.perItem[idx] ? pr.perItem[idx].pending : 0));
-      const payments = rest > 0.0001 ? [...existing, { amount: Math.round(rest * 100) / 100, method: m }] : existing;
+      const payments = (idx === 0)
+        ? [...existing, { amount: Math.round(rest * 100) / 100, method: m }]
+        : existing;
       return { flavor: i.flavor, model: i.model, units: i.units, payments };
     });
     await addOrUpdateSale({ ...sale, items });
@@ -4707,14 +4782,16 @@ function saleCard(s) {
     </div>`: '';
   const actions = payBtns + resetBtn;
 
-  // Partial summary line (only when the sale is genuinely split)
+  // Resumo do pagamento da venda: método(s) e, se faltar, quanto falta.
   const byM = pr.by;
   let paySummary = '';
-  if (hasPaid && hasPending) {
+  if (hasPaid) {
     const mparts = [];
     if (byM.cash  > 0.005) mparts.push(fmt(byM.cash)  + ' 💵');
     if (byM.mbway > 0.005) mparts.push(fmt(byM.mbway) + ' 📱');
-    paySummary = `<div class="list-item-meta"><span style="color:#fb923c;font-weight:600;">${fmt(paidAmt)} pago (${mparts.join(' · ')}) · ${fmt(pendAmt)} pendente</span></div>`;
+    const pend = hasPending ? ` · ${fmt(pendAmt)} pendente` : '';
+    const col  = hasPending ? '#fb923c' : 'var(--c-emerald)';
+    paySummary = `<div class="list-item-meta"><span style="color:${col};font-weight:600;">${fmt(paidAmt)} pago (${mparts.join(' · ')})${pend}</span></div>`;
   }
 
   return `<div class="list-item ${hasPending ? 'pending' : ''}">
@@ -4734,23 +4811,16 @@ function saleCard(s) {
       ${(() => {
         const bd = calcSaleBreakdown(s.items || [], s.applyPromo === true, s.id);
         if (bd.total > 0 && Math.abs(bd.total - (s.totalPrice || 0)) < 0.5) {
-          // Auto price applies (within €0.50 of saved) — show breakdown
           const parts = bd.perModel.map(pm => breakdownToText(pm.lines));
           return `<span style="color:var(--text-subtle);">${parts.join(' · ')}</span>`;
         }
-        // Manual / promo price — show average
-        return `<span style="color:var(--accent);">${fmt(s.totalPrice / Math.max(s.units, 1))}/un. média</span>`;
+        return '';
       })()}
     </div>
     ${paySummary}
     <div style="display:flex;gap:4px;flex-wrap:wrap;">
-      ${(s.items || []).map((it, idx) => {
-        const ib = pr.perItem[idx] ? pr.perItem[idx].by : { cash: 0, mbway: 0 };
-        const parts = [];
-        if (ib.cash  > 0.005) parts.push(fmt(ib.cash)  + '💵');
-        if (ib.mbway > 0.005) parts.push(fmt(ib.mbway) + '📱');
-        const tag = parts.length ? ` · ${parts.join('·')}` : '';
-        return `<span class="badge badge-purple">${escapeHtml(it.flavor || '?')}${it.model ? ' · ' + escapeHtml(it.model) : ''} · ${it.units}v${tag}</span>`;
+      ${(s.items || []).map((it) => {
+        return `<span class="badge badge-purple">${escapeHtml(it.flavor || '?')}${it.model ? ' · ' + escapeHtml(it.model) : ''} · ${it.units}v</span>`;
       }).join('')}
     </div>
     ${s.customer ? `<div class="list-item-meta"><span>👤 <strong>${escapeHtml(s.customer)}</strong></span></div>` : ''}
@@ -5931,6 +6001,9 @@ function wireEvents() {
   if (saleCatPicker) saleCatPicker.addEventListener('change', handleSaleCatalogPickerChange);
   const saleAddItemBtn = document.getElementById('sale-addItemBtn');
   if (saleAddItemBtn) saleAddItemBtn.addEventListener('click', () => { addSaleItemRow(); updateSaleTotals(); });
+  // Pagamento ao nível da venda: adicionar linha de pagamento (dinheiro / mbway)
+  const saleAddPayBtn = document.getElementById('sale-add-pay');
+  if (saleAddPayBtn) saleAddPayBtn.addEventListener('click', () => { addSalePayRow(); updateSalePaySummary(); });
 
   // Detect manual edit of haul price (disables auto-calc)
   document.getElementById('haul-price').addEventListener('input', (e) => {
