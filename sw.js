@@ -1,5 +1,5 @@
 // VapeTrack Service Worker — offline support + auto-update
-const VERSION = 'vapetrack-v73-dinheiro-real';
+const VERSION = 'vapetrack-v74-limpeza-codigo-morto';
 const CACHE = `vt-cache-${VERSION}`;
 const ASSETS = [
   '/',
