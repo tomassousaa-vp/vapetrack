@@ -2203,7 +2203,7 @@ function createSbClient() {
 }
 
 // App version — keep in sync with sw.js VERSION (used in account sheet for verification)
-const APP_VERSION = 'v73';
+const APP_VERSION = 'v74';
 
 let currentUser = null;
 let dataReady = false;
@@ -2492,18 +2492,6 @@ function itemPayments(i) {
 // € value and (possibly fractional) unit-equivalent of one payment.
 function paymentAmount(p, avg) { return p.amount != null ? p.amount : p.units * (p.perUnit != null ? p.perUnit : avg); }
 function paymentUnits(p, avg)  { return p.units  != null ? p.units  : (avg > 0 ? p.amount / avg : 0); }
-function itemPaidAmount(i, avg) { return itemPayments(i).reduce((s, p) => s + paymentAmount(p, avg), 0); }
-function itemPaidUnits(i, avg)  { return itemPayments(i).reduce((s, p) => s + paymentUnits(p, avg), 0); }
-// Short "€7💵·€3📱" summary of an item's paid € by method.
-function itemPaidSummaryShort(i, avg) {
-  const r2 = n => Math.round(n * 100) / 100;
-  const by = { cash: 0, mbway: 0 };
-  itemPayments(i).forEach(p => { by[p.method] += paymentAmount(p, avg || 0); });
-  const parts = [];
-  if (by.cash  > 0.0001) parts.push('€' + r2(by.cash)  + '💵');
-  if (by.mbway > 0.0001) parts.push('€' + r2(by.mbway) + '📱');
-  return parts.join('·');
-}
 
 // Status from items + (optional) sale total. With a total we judge "fully paid"
 // by € (robust for amount splits); without it we fall back to unit counts.
@@ -2532,10 +2520,6 @@ function deriveSaleStatus(items, totalPrice) {
 function dbStatusFromItems(items, totalPrice) {
   const st = deriveSaleStatus(items, totalPrice);
   return (st === 'cash' || st === 'mbway') ? st : 'pending';
-}
-function saleUnitPrice(s) {
-  const u = s.units || 0;
-  return u > 0 ? (s.totalPrice || 0) / u : 0;
 }
 
 // ── Valorização por PREÇO REAL (nunca média) ──────────────────────────────
@@ -2594,11 +2578,8 @@ function priceSale(s) {
   return { perItem, total: saleTotal, paid, pending: Math.max(0, saleTotal - paid), by };
 }
 
-function salePaidUnits(s)   { const avg = saleUnitPrice(s); return (s.items || []).reduce((sum, i) => sum + itemPaidUnits(i, avg), 0); }
-function salePendingUnits(s){ return Math.max(0, (s.units || 0) - salePaidUnits(s)); }
 function salePaidAmount(s)  { return priceSale(s).paid; }
 function salePendingAmount(s) { return priceSale(s).pending; }
-function salePaidByMethod(s) { return priceSale(s).by; }
 
 // ═══════════════════════════════════════
 // SUPABASE CRUD
@@ -2636,22 +2617,6 @@ async function loadAllData() {
     };
   });
   dataReady = true;
-}
-
-async function savePricingDB(modelName, basePrice, promotions) {
-  const payload = {
-    user_id: currentUser.id,
-    model_name: modelName,
-    base_price: parseFloat(basePrice) || 0,
-    promotions: promotions || [],
-    updated_at: new Date().toISOString(),
-  };
-  const { error } = await sb.from('pricing').upsert(payload, { onConflict: 'user_id,model_name' });
-  if (error) throw error;
-  cache.pricing[modelName] = {
-    basePrice: payload.base_price,
-    promotions: payload.promotions,
-  };
 }
 
 // Core: calculate price for X units given an explicit pricing config
@@ -4080,144 +4045,6 @@ function updateSalePaySummary() {
   } else {
     el.textContent = `Pago ${fmt(paid)}${meta} ✓ tudo pago`;
     el.style.color = 'var(--c-emerald)';
-  }
-}
-
-// Average € per vape in the current form (sale total ÷ total vapes). Usado só
-// como recurso para semear a Divisão quando não há preços reais.
-function formAvgPrice() {
-  const rows = [...document.querySelectorAll('#sale-items-wrap .item-card')];
-  const totalUnits = rows.reduce((s, c) => s + (parseInt(c.querySelector('.sale-item-units').value) || 0), 0);
-  const total = parseFloat(document.getElementById('sale-price')?.value) || 0;
-  return totalUnits > 0 ? total / totalUnits : 0;
-}
-
-// Valorização por PREÇO REAL do formulário atual (escalões, não média).
-// Devolve as linhas e o priceSale() do estado corrente do form.
-function formPriceSale() {
-  const rows = [...document.querySelectorAll('#sale-items-wrap .item-card')];
-  const items = rows.map(c => {
-    const units = parseInt(c.querySelector('.sale-item-units')?.value) || 0;
-    return {
-      flavor: (c.querySelector('.sale-item-flavor')?.value || '').trim(),
-      model:  (c.querySelector('.sale-item-model')?.value || '').trim(),
-      units,
-      payments: itemPayments({ units, payments: readItemPaymentsFromCard(c) }),
-    };
-  });
-  const totalUnits = items.reduce((a, i) => a + i.units, 0);
-  const total = parseFloat(document.getElementById('sale-price')?.value) || 0;
-  const promoEl = document.getElementById('sale-apply-promo');
-  const info = priceSale({
-    items, units: totalUnits, totalPrice: total,
-    applyPromo: !!(promoEl && promoEl.checked), id: _openSheetEditId || null,
-  });
-  return { rows, info };
-}
-
-// A Divisão row: how much € was paid by a given method.
-function addSplitRow(card, rowsEl, pay) {
-  pay = pay || { amount:'', method:'cash' };
-  const row = document.createElement('div');
-  row.className = 'split-row';
-  row.style.cssText = 'display:flex;gap:6px;align-items:center;margin-bottom:6px;';
-  const amtVal = (pay.amount != null && pay.amount !== '') ? pay.amount : '';
-  row.innerHTML = `
-    <input class="field-input split-amount" type="number" min="0" step="0.01" inputmode="decimal" placeholder="€ valor" value="${amtVal}" style="flex:1;min-width:0;">
-    <select class="field-input split-method" style="flex:1;min-width:0;">
-      <option value="cash"${pay.method !== 'mbway' ? ' selected' : ''}>💵 Dinheiro</option>
-      <option value="mbway"${pay.method === 'mbway' ? ' selected' : ''}>📱 MB Way</option>
-    </select>
-    <button type="button" class="split-remove" aria-label="Remover pagamento" style="flex:0 0 auto;background:none;border:0;color:var(--text-subtle);font-size:20px;line-height:1;cursor:pointer;padding:0 4px;">×</button>
-  `;
-  rowsEl.appendChild(row);
-  const refresh = () => updateSaleItemPaySummary(card);
-  row.querySelector('.split-amount').addEventListener('input', refresh);
-  row.querySelector('.split-method').addEventListener('change', refresh);
-  row.querySelector('.split-remove').addEventListener('click', () => { row.remove(); refresh(); });
-}
-
-function toggleSplitMode(card, forceOn) {
-  const splits = card.querySelector('.sale-item-splits');
-  const quick  = card.querySelector('.item-card-pay');
-  const toggle = card.querySelector('.sale-item-split-toggle');
-  const turnOn = forceOn === true ? true : (splits.style.display === 'none');
-  if (turnOn) {
-    splits.style.display = '';
-    quick.style.display = 'none';
-    toggle.textContent = '× Fechar divisão';
-    if (!splits.querySelector('.split-rows')) {
-      splits.innerHTML = `
-        <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">Quanto foi pago em cada método (€):</div>
-        <div class="split-rows"></div>
-        <button type="button" class="split-add" style="background:none;border:1px dashed var(--border);border-radius:8px;color:var(--accent);font:inherit;font-size:12px;font-weight:600;cursor:pointer;padding:6px 10px;">+ Adicionar pagamento</button>`;
-      const rowsEl = splits.querySelector('.split-rows');
-      // Semear com os € REAIS já pagos por método (preços de escalão, não média).
-      const r2 = n => Math.round(n * 100) / 100;
-      const { rows, info } = formPriceSale();
-      const it = info.perItem[rows.indexOf(card)] || { by: { cash: 0, mbway: 0 } };
-      let seed = [];
-      if (it.by.cash  > 0.005) seed.push({ amount: r2(it.by.cash),  method: 'cash' });
-      if (it.by.mbway > 0.005) seed.push({ amount: r2(it.by.mbway), method: 'mbway' });
-      if (!seed.length) seed = [{ amount: '', method: 'cash' }];
-      seed.forEach(p => addSplitRow(card, rowsEl, p));
-      splits.querySelector('.split-add').addEventListener('click', () => addSplitRow(card, rowsEl, null));
-    }
-  } else {
-    splits.style.display = 'none';
-    quick.style.display = '';
-    toggle.textContent = '⊟ Dividir pagamento (€)';
-  }
-  updateSaleItemPaySummary(card);
-  debouncedUpdateSaleTotals();
-}
-
-// Read an item's payments from a card (Divisão € rows if open, else the quick path).
-function readItemPaymentsFromCard(card) {
-  const splits = card.querySelector('.sale-item-splits');
-  if (splits && splits.style.display !== 'none') {
-    const out = [];
-    splits.querySelectorAll('.split-row').forEach(r => {
-      const amt = parseFloat(r.querySelector('.split-amount').value);
-      if (!(amt > 0)) return;
-      const method = r.querySelector('.split-method').value === 'mbway' ? 'mbway' : 'cash';
-      out.push({ amount: amt, method });
-    });
-    return out;
-  }
-  const paid = parseInt(card.querySelector('.sale-item-paid')?.value) || 0;
-  if (paid <= 0) return [];
-  const method = card.querySelector('.sale-item-method')?.value === 'mbway' ? 'mbway' : 'cash';
-  return [{ units: paid, perUnit: null, method }];
-}
-
-// Live "€X pago (€a💵·€b📱) · €Y pendente" summary; clamps the quick paid input.
-function updateSaleItemPaySummary(card) {
-  const units = parseInt(card.querySelector('.sale-item-units').value) || 0;
-  const paidInp = card.querySelector('.sale-item-paid');
-  if (paidInp) {
-    const paid = parseInt(paidInp.value) || 0;
-    if (paid < 0) paidInp.value = '';
-    if (units > 0 && paid > units) paidInp.value = String(units);
-  }
-  const { rows, info } = formPriceSale();
-  const it = info.perItem[rows.indexOf(card)] || { total: 0, paid: 0, pending: 0, by: { cash: 0, mbway: 0 } };
-  const by = it.by;
-  const paidAmt = it.paid;
-  const itemValue = it.total;
-  const pendAmt = it.pending;
-  const e = n => fmt(n); // valores redondos, sem cêntimos
-  const mparts = [];
-  if (by.cash  > 0.0001) mparts.push(e(by.cash)  + '💵');
-  if (by.mbway > 0.0001) mparts.push(e(by.mbway) + '📱');
-  const sumEl = card.querySelector('.item-card-paysum');
-  if (!sumEl) return;
-  if (paidAmt <= 0.0001) {
-    sumEl.textContent = itemValue > 0.005 ? `${e(itemValue)} pendente` : '';
-    sumEl.style.color = 'var(--text-muted)';
-  } else {
-    sumEl.textContent = `${e(paidAmt)} pago (${mparts.join('·')})` + (pendAmt > 0.005 ? ` · ${e(pendAmt)} pendente` : '');
-    sumEl.style.color = pendAmt > 0.005 ? '#fb923c' : 'var(--c-emerald)';
   }
 }
 
