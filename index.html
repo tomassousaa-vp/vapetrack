@@ -2203,7 +2203,7 @@ function createSbClient() {
 }
 
 // App version — keep in sync with sw.js VERSION (used in account sheet for verification)
-const APP_VERSION = 'v71';
+const APP_VERSION = 'v72';
 
 let currentUser = null;
 let dataReady = false;
@@ -4647,6 +4647,10 @@ function haulDetailHtml(h, stat) {
   const margin     = stat?.margin || 0;
   const revenue    = stat?.revenuePaid || 0;
   const isComplete = stat?.isComplete || false;
+  // Dinheiro recebido SÓ desta encomenda (haul), por método, + o que falta receber.
+  const revCash    = stat?.revenueCash || 0;
+  const revMbway   = stat?.revenueMbway || 0;
+  const revPending = stat?.revenuePending || 0;
 
   // Group items by MODEL (alphabetical), within each model by flavor (alphabetical)
   const byModel = {};
@@ -4733,6 +4737,21 @@ function haulDetailHtml(h, stat) {
         <div class="kpi-sub">Receita: ${fmt(revenue)} · ${margin.toFixed(1)}%</div>
       </div>
     </div>
+
+    <div class="section-title"><h2>Dinheiro desta encomenda</h2></div>
+    <div class="kpi-row">
+      <div class="kpi green">
+        <div class="kpi-label">Recebido 💵</div>
+        <div class="kpi-value">${fmt(revCash)}</div>
+        <div class="kpi-sub">dinheiro</div>
+      </div>
+      <div class="kpi blue">
+        <div class="kpi-label">Recebido 📱</div>
+        <div class="kpi-value">${fmt(revMbway)}</div>
+        <div class="kpi-sub">MB Way</div>
+      </div>
+    </div>
+    ${revPending > 0.005 ? `<div class="info-block" style="background:var(--yellow-light);border-color:rgba(245,158,11,0.3);margin-top:8px;"><svg viewBox="0 0 24 24" fill="none" stroke="#F59E0B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg><span style="color:var(--text);">Falta receber nesta encomenda: <strong style="color:var(--yellow);">${fmt(revPending)}</strong></span></div>` : `<div class="info-block" style="margin-top:8px;"><span style="color:var(--green);">✓ Tudo recebido nesta encomenda</span></div>`}
 
     ${velocityBlock}
 
