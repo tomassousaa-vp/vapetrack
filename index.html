@@ -2203,7 +2203,7 @@ function createSbClient() {
 }
 
 // App version — keep in sync with sw.js VERSION (used in account sheet for verification)
-const APP_VERSION = 'v72';
+const APP_VERSION = 'v73';
 
 let currentUser = null;
 let dataReady = false;
@@ -5553,23 +5553,26 @@ function refreshFinanceiroSheet() {
     if (stat) invested += stat.investedTotal || 0;
   });
 
-  // Receita, dinheiro/MB Way recebidos, pendente e lucro = TODOS os hauls,
-  // incluindo os já ESGOTADOS. O dinheiro recebido continua a contar mesmo
-  // depois de o haul esgotar (senão o total "desaparecia" e não batia certo).
+  // Lucro/custo = FIFO por haul (baseado no custo do stock). Todos os hauls.
   cache.hauls.forEach(h => {
     const stat = statsMap.get(h.id);
     if (!stat) return;
-    totalRevenue += stat.revenueAll || 0;
-    cashAmt += stat.revenueCash || 0;
-    mbwayAmt += stat.revenueMbway || 0;
-    pendingAmt += stat.revenuePending || 0;
-    stat.cashSalesIds.forEach(id => { cashSet.add(id); paidSet.add(id); });
-    stat.mbwaySalesIds.forEach(id => { mbwaySet.add(id); paidSet.add(id); });
-    stat.pendingSalesIds.forEach(id => pendingSet.add(id));
-    stat.anySalesIds.forEach(id => allSet.add(id));
     realProfit += stat.profit || 0;
     realPaidCost += stat.paidCost || 0;
     realRevenuePaid += stat.revenuePaid || 0;
+  });
+
+  // DINHEIRO recebido (mão / MB Way), pendente e receita = DIRETO das vendas.
+  // NÃO depende de stock nem de FIFO: conta SEMPRE, mesmo que a venda não bata
+  // com nenhum haul (vendeste a mais, sabor não registado, venda antes do haul…).
+  // É o valor REAL que tens em mão e em MB Way.
+  getSales().forEach(s => {
+    const pr = priceSale(s);
+    totalRevenue += pr.total;
+    if (pr.by.cash  > 0.005) { cashAmt  += pr.by.cash;  cashSet.add(s.id);  paidSet.add(s.id); }
+    if (pr.by.mbway > 0.005) { mbwayAmt += pr.by.mbway; mbwaySet.add(s.id); paidSet.add(s.id); }
+    if (pr.pending  > 0.005) { pendingAmt += pr.pending; pendingSet.add(s.id); }
+    allSet.add(s.id);
   });
 
   const totalSales = allSet.size;  // distinct sales (a partial sale counts once)
