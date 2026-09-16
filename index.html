@@ -2203,7 +2203,7 @@ function createSbClient() {
 }
 
 // App version — keep in sync with sw.js VERSION (used in account sheet for verification)
-const APP_VERSION = 'v70';
+const APP_VERSION = 'v71';
 
 let currentUser = null;
 let dataReady = false;
@@ -3294,14 +3294,17 @@ function computeHaulStats() {
     // item, a lista de preços (ascendente) e o pago/método já valorizados certo.
     const pr = priceSale(sale);
 
+    // Pagamento é ao NÍVEL DA VENDA (divisão livre). O € pago e o split por método
+    // consomem-se ao longo de TODOS os vapes da venda (mais baratos primeiro), não
+    // por linha — senão, com o pagamento guardado na 1ª linha, as contas baralham-se.
+    const mbShare = pr.paid > 0 ? pr.by.mbway / pr.paid : 0;
+    let paidEurRemaining = pr.paid;
     (sale.items || []).forEach((saleItem, itemIdx) => {
       const key = (saleItem.flavor || '') + '|' + (saleItem.model || '');
       const itemUnits = parseInt(saleItem.units) || 0;
       const info = pr.perItem[itemIdx] || { prices: [], paid: 0, by: { cash: 0, mbway: 0 } };
-      // Fila de preços reais (mais baratos primeiro) e € pago a consumir paid-first.
+      // Fila de preços reais (mais baratos primeiro).
       const priceQueue = info.prices.slice();
-      const mbShare = info.paid > 0 ? info.by.mbway / info.paid : 0;
-      let paidEurRemaining = info.paid;
       let unitsToAssign = itemUnits;
       for (const haul of haulsAsc) {
         if (unitsToAssign <= 0) break;
@@ -5525,10 +5528,18 @@ function refreshFinanceiroSheet() {
   const paidSet = new Set();
   const allSet = new Set();  // union of all sale IDs (partial sales overlap buckets)
 
+  // Investido = dinheiro parado no STOCK ATUAL → só hauls ativos.
   activeHauls.forEach(h => {
     const stat = statsMap.get(h.id);
+    if (stat) invested += stat.investedTotal || 0;
+  });
+
+  // Receita, dinheiro/MB Way recebidos, pendente e lucro = TODOS os hauls,
+  // incluindo os já ESGOTADOS. O dinheiro recebido continua a contar mesmo
+  // depois de o haul esgotar (senão o total "desaparecia" e não batia certo).
+  cache.hauls.forEach(h => {
+    const stat = statsMap.get(h.id);
     if (!stat) return;
-    invested += stat.investedTotal || 0;
     totalRevenue += stat.revenueAll || 0;
     cashAmt += stat.revenueCash || 0;
     mbwayAmt += stat.revenueMbway || 0;
