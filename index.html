@@ -2203,7 +2203,7 @@ function createSbClient() {
 }
 
 // App version — keep in sync with sw.js VERSION (used in account sheet for verification)
-const APP_VERSION = 'v74';
+const APP_VERSION = 'v75';
 
 let currentUser = null;
 let dataReady = false;
@@ -2794,7 +2794,7 @@ function calcSaleTotalFromItems(items, applyPromo = true, excludeSaleId = null) 
   // For each chunk (haul+model+units), use that haul's pricing.
   // Promo `max` is CUMULATIVE per haul+model across sales that USE the promo — once exhausted, base price.
   // If applyPromo === false, every chunk is charged at base price (promo ignored).
-  const dist = distributeItemsAcrossHaulsFIFO(items);
+  const dist = distributeItemsAcrossHaulsFIFO(items, excludeSaleId);
   const sold = getHaulModelPromoUsed(excludeSaleId); // promo units already used per haul per model
   let total = 0;
   Object.entries(dist).forEach(([haulId, byModel]) => {
@@ -2812,7 +2812,10 @@ function calcSaleTotalFromItems(items, applyPromo = true, excludeSaleId = null) 
 // FIFO distribution: maps each sale item's units across hauls (oldest first)
 // Returns { haulId: { model: totalUnits } }
 // Also returns unassigned units (oversold) under key '__unassigned'
-function distributeItemsAcrossHaulsFIFO(items) {
+// excludeSaleId: venda a ser EDITADA — os vapes que ela já tinha tirado voltam a
+// contar como disponíveis, para não ser contada duas vezes (senão parte dos vapes
+// ficava fora do preço, a €0). Sem id, comportamento igual ao de sempre.
+function distributeItemsAcrossHaulsFIFO(items, excludeSaleId = null) {
   const statsMap = computeHaulStats();
   // Use current remaining (post past sales)
   const remaining = new Map();
@@ -2824,7 +2827,10 @@ function distributeItemsAcrossHaulsFIFO(items) {
   haulsAsc.forEach(h => {
     const stat = statsMap.get(h.id);
     if (!stat) return;
-    remaining.set(h.id, { ...stat.remaining });
+    const rem = { ...stat.remaining };
+    const back = excludeSaleId != null && stat.takenBySale ? stat.takenBySale[excludeSaleId] : null;
+    if (back) Object.entries(back).forEach(([k, u]) => { rem[k] = (rem[k] || 0) + u; });
+    remaining.set(h.id, rem);
   });
 
   const result = {};
@@ -2864,7 +2870,7 @@ function distributeItemsAcrossHaulsFIFO(items) {
 
 // Breakdown for an entire sale (FIFO-aware, per-haul pricing)
 function calcSaleBreakdown(items, applyPromo = true, excludeSaleId = null) {
-  const dist = distributeItemsAcrossHaulsFIFO(items);
+  const dist = distributeItemsAcrossHaulsFIFO(items, excludeSaleId);
   const sold = getHaulModelPromoUsed(excludeSaleId);
   const perGroup = [];
   let total = 0;
@@ -3245,6 +3251,9 @@ function computeHaulStats() {
       anySalesIds: new Set(),
       firstSaleDate: null,
       lastSaleDate: null,
+      // Quanto cada venda tirou desta encomenda: { vendaId: { 'sabor|modelo': unidades } }.
+      // Usado para "devolver" os vapes de uma venda quando ela está a ser editada.
+      takenBySale: {},
     });
   });
 
@@ -3281,6 +3290,8 @@ function computeHaulStats() {
         const taken = Math.min(avail, unitsToAssign);
         stat.remaining[key] = avail - taken;
         unitsToAssign -= taken;
+        const tk = stat.takenBySale[sale.id] || (stat.takenBySale[sale.id] = {});
+        tk[key] = (tk[key] || 0) + taken;
 
         // Real € of the vapes taken from this haul (cheapest first).
         const chunkPrices = priceQueue.splice(0, taken);
