@@ -2203,7 +2203,7 @@ function createSbClient() {
 }
 
 // App version — keep in sync with sw.js VERSION (used in account sheet for verification)
-const APP_VERSION = 'v75';
+const APP_VERSION = 'v76';
 
 let currentUser = null;
 let dataReady = false;
@@ -2797,16 +2797,43 @@ function calcSaleTotalFromItems(items, applyPromo = true, excludeSaleId = null) 
   const dist = distributeItemsAcrossHaulsFIFO(items, excludeSaleId);
   const sold = getHaulModelPromoUsed(excludeSaleId); // promo units already used per haul per model
   let total = 0;
+  pricingGroups(dist, sold).forEach(g => {
+    total += calcPriceFromConfig(g.pricing, g.units, g.pastSold, applyPromo);
+  });
+  return total;
+}
+
+// Parcelas a precificar: uma por (encomenda × modelo), EXCETO quando duas encomendas têm
+// exatamente os mesmos preços e promoções (sem limite máximo) — aí juntam-se, para a
+// promoção contar a venda inteira (ex.: 2 vapes de uma encomenda + 3 de outra = promo de 5).
+// Com preços diferentes ou promoções com limite, mantém-se o cálculo por encomenda.
+function pricingGroups(dist, sold) {
+  const groups = [];
+  const merged = new Map();
   Object.entries(dist).forEach(([haulId, byModel]) => {
     const haul = (haulId === '__unassigned') ? null : cache.hauls.find(h => h.id === haulId);
     const pastByModel = (haulId !== '__unassigned' && sold.get(haulId)) || {};
     Object.entries(byModel).forEach(([model, units]) => {
       const pricing = haul ? getHaulPricing(haul, model) : (cache.pricing[model] || null);
       const pastSold = pastByModel[model] || 0;
-      total += calcPriceFromConfig(pricing, units, pastSold, applyPromo);
+      const promos = (pricing && pricing.promotions) || [];
+      const mergeable = !!(haul && pricing && !promos.some(p => parseInt(p.maxUnits) > 0));
+      const key = mergeable
+        ? model + '|' + JSON.stringify([
+            parseFloat(pricing.basePrice) || 0,
+            promos.map(p => [parseInt(p.minUnits) || 0, parseFloat(p.totalPrice) || 0])
+                  .sort((a, b) => a[0] - b[0] || a[1] - b[1]),
+          ])
+        : null;
+      if (key && merged.has(key)) merged.get(key).units += units;
+      else {
+        const g = { haul, model, pricing, units, pastSold };
+        groups.push(g);
+        if (key) merged.set(key, g);
+      }
     });
   });
-  return total;
+  return groups;
 }
 
 // FIFO distribution: maps each sale item's units across hauls (oldest first)
@@ -2874,18 +2901,12 @@ function calcSaleBreakdown(items, applyPromo = true, excludeSaleId = null) {
   const sold = getHaulModelPromoUsed(excludeSaleId);
   const perGroup = [];
   let total = 0;
-  Object.entries(dist).forEach(([haulId, byModel]) => {
-    const haul = (haulId === '__unassigned') ? null : cache.hauls.find(h => h.id === haulId);
-    const pastByModel = (haulId !== '__unassigned' && sold.get(haulId)) || {};
-    Object.entries(byModel).forEach(([model, units]) => {
-      const pricing = haul ? getHaulPricing(haul, model) : (cache.pricing[model] || null);
-      const pastSold = pastByModel[model] || 0;
-      const bd = calcBreakdownFromConfig(pricing, units, pastSold, applyPromo);
-      if (bd.lines.length > 0) {
-        perGroup.push({ haul, model, lines: bd.lines, total: bd.total });
-        total += bd.total;
-      }
-    });
+  pricingGroups(dist, sold).forEach(g => {
+    const bd = calcBreakdownFromConfig(g.pricing, g.units, g.pastSold, applyPromo);
+    if (bd.lines.length > 0) {
+      perGroup.push({ haul: g.haul, model: g.model, lines: bd.lines, total: bd.total });
+      total += bd.total;
+    }
   });
   return { perModel: perGroup.map(g => ({ model: g.model, lines: g.lines, total: g.total })), perGroup, total };
 }
