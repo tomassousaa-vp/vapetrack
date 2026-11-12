@@ -2203,7 +2203,7 @@ function createSbClient() {
 }
 
 // App version — keep in sync with sw.js VERSION (used in account sheet for verification)
-const APP_VERSION = 'v77';
+const APP_VERSION = 'v78';
 
 let currentUser = null;
 let dataReady = false;
@@ -2253,9 +2253,11 @@ const KEY_CATALOG  = 'vapetrack_catalog_v1';
 // Pricing tiers per product (€ per box) — preço aplicado ao TOTAL de caixas desse modelo
 const PRODUCT_PRICING = {
   'King Pro 65K': [
-    { minBoxes: 1,  pricePerBox: 72.00 },
-    { minBoxes: 10, pricePerBox: 68.50 },
-    { minBoxes: 20, pricePerBox: 65.50 },
+    { minBoxes: 5,   pricePerBox: 73.50 },
+    { minBoxes: 10,  pricePerBox: 70.00 },
+    { minBoxes: 20,  pricePerBox: 67.00 },
+    { minBoxes: 40,  pricePerBox: 65.00 },
+    { minBoxes: 100, pricePerBox: 63.00 },
   ],
   'MARS': [
     { minBoxes: 1,  pricePerBox: 70.00 },
@@ -2277,7 +2279,7 @@ const DEFAULT_CATALOG = {
     'Blueberry Sour Raspberry',
     'Cherry Cola',
     'Cherry Lemon',
-    'Cocoloco',
+    'Coco Loco',
     'Cotton Candy',
     'Fizzy Cherry',
     'Grape Burst',
@@ -2294,7 +2296,6 @@ const DEFAULT_CATALOG = {
     'Peach Mango Pineapple',
     'Pina Colada',
     'Pink Lemonade',
-    'Pink Lemonade Ice',
     'Sex on the Beach',
     'Strawberry Banana',
     'Strawberry Kiwi',
